@@ -1,0 +1,8 @@
+Features that are still left to be implemented:
+
+
+
+	-Full GUI Support for Top-Level Directives:
+The application can now parse and display directives like @mapsize, @version, etc., but the GUI does not yet allow you to create or edit them.
+The "New" button in the element list needs to be updated to allow for the creation of these new directive types, in addition to entity classes.
+Dedicated editing interfaces need to be created in the right-hand panel to allow the values of these directives (e.g., the version number for @version or the coordinates for @mapsize) to be modified.
