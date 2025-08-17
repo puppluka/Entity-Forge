@@ -508,7 +508,3 @@ class FGDApplication(tk.Tk):
 
     def _update_base_classes(self, element: EntityClass, new_bases_str: str):
         element.base_classes = [b.strip() for b in new_bases_str.split(',') if b.strip()]
-
-if __name__ == "__main__":
-    app = FGDApplication()
-    app.mainloop()
