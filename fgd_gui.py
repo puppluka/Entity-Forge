@@ -7,7 +7,11 @@ import re
 
 # Import the core logic modules
 from fgd_parser import FGDParser
-from fgd_model import FGDFile, EntityClass, KeyvalueProperty, ChoicesProperty, FlagsProperty, IO, ChoiceItem, FlagItem, IncludeDirective, Property
+from fgd_model import (
+    FGDFile, EntityClass, KeyvalueProperty, ChoicesProperty, FlagsProperty,
+    IO, ChoiceItem, FlagItem, IncludeDirective, Property, FGDElement, MapSize,
+    Version, AutoVisGroup, MaterialExclusion
+)
 from fgd_serializer import FGDSerializer
 
 class FGDApplication(tk.Tk):
@@ -19,21 +23,11 @@ class FGDApplication(tk.Tk):
 
         self.fgd_file: FGDFile | None = None
         self.current_fgd_path: str | None = None
-        self.selected_element: EntityClass | IncludeDirective | None = None
+        self.selected_element: FGDElement | None = None
         self.properties_frame_inner_id = None
 
         self.parser = FGDParser()
         self.serializer = FGDSerializer()
-
-        self._property_widgets = {}
-        self._io_widgets = {'input': [], 'output': []} 
-        self._base_classes_text = None
-        self.description_text = None
-        self.color_var = None
-        self.size_min_var = None
-        self.size_max_var = None
-        self.studio_var = None
-        self.sprite_var = None
 
         self._create_widgets()
         self._setup_menu()
@@ -46,8 +40,7 @@ class FGDApplication(tk.Tk):
         self.main_pane.add(self.elements_frame, weight=1)
 
         ttk.Label(self.elements_frame, text="FGD Elements:").pack(padx=5, pady=5, anchor="w")
-        
-        # Frame for the list and scrollbar
+
         list_frame = ttk.Frame(self.elements_frame)
         list_frame.pack(fill="both", expand=True, padx=5, pady=(0, 5))
 
@@ -59,12 +52,11 @@ class FGDApplication(tk.Tk):
 
         self.elements_list_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.elements_list.yview)
         self.elements_list.configure(yscrollcommand=self.elements_list_scrollbar.set)
-        
+
         self.elements_list_scrollbar.pack(side="right", fill="y")
         self.elements_list.pack(side="left", fill="both", expand=True)
         self.elements_list.bind("<<TreeviewSelect>>", self._on_element_select)
 
-        # --- NEW CODE: Frame and buttons for New/Delete ---
         button_frame = ttk.Frame(self.elements_frame)
         button_frame.pack(fill="x", padx=5, pady=5)
 
@@ -73,7 +65,6 @@ class FGDApplication(tk.Tk):
 
         delete_button = ttk.Button(button_frame, text="Delete Selected", command=self._delete_selected_element)
         delete_button.pack(side="right", fill="x", expand=True, padx=(2, 0))
-        # --- END NEW CODE ---
 
         self.properties_frame = ttk.Frame(self.main_pane, relief=tk.RIDGE, borderwidth=2)
         self.main_pane.add(self.properties_frame, weight=3)
@@ -83,13 +74,13 @@ class FGDApplication(tk.Tk):
         self.properties_canvas = tk.Canvas(self.properties_frame, bd=0, highlightthickness=0)
         self.properties_scrollbar = ttk.Scrollbar(self.properties_frame, orient="vertical", command=self.properties_canvas.yview)
         self.properties_canvas.configure(yscrollcommand=self.properties_scrollbar.set)
-        
+
         self.properties_canvas.pack(side="left", fill="both", expand=True)
         self.properties_scrollbar.pack(side="right", fill="y")
-        
+
         self.properties_frame_inner = ttk.Frame(self.properties_canvas)
         self.properties_frame_inner_id = self.properties_canvas.create_window((0, 0), window=self.properties_frame_inner, anchor="nw")
-        
+
         self.properties_frame_inner.bind("<Configure>", lambda e: self.properties_canvas.configure(scrollregion=self.properties_canvas.bbox("all")))
         self.properties_canvas.bind('<Configure>', lambda e: self.properties_canvas.itemconfig(self.properties_frame_inner_id, width=e.width))
 
@@ -108,25 +99,12 @@ class FGDApplication(tk.Tk):
 
     def _new_fgd_file(self):
         self.fgd_file = FGDFile()
-        self._create_template_content(self.fgd_file)
-        
         self.current_fgd_path = None
         self.title("FGD Editor - New File*")
         self._update_elements_list()
         self._clear_properties_frame()
-        messagebox.showinfo("New File", "Created a new file with example entities.")
+        messagebox.showinfo("New File", "Created a new, empty FGD file.")
 
-    def _create_template_content(self, fgd_file: FGDFile):
-        base_entity = EntityClass(class_type="BaseClass", name="BaseEntity", description="A base class for other entities to inherit from.", properties=[KeyvalueProperty("targetname", "string", "Name", "", "The name that other entities use to target this entity.")])
-        fgd_file.add_element(base_entity)
-        light_entity = EntityClass(class_type="PointClass", name="light_example", description="A simple point light source.", base_classes=["BaseEntity"], color=(255, 220, 180), sprite='sprites/light.spr', properties=[KeyvalueProperty("brightness", "integer", "Light Brightness", "200", "How bright the light is.")])
-        fgd_file.add_element(light_entity)
-        trigger_entity = EntityClass(class_type="SolidClass", name="trigger_example", description="A brush entity that fires outputs when activated.", size=((-16, -16, -16), (16, 16, 16)), properties=[ChoicesProperty(name="activation_mode", prop_type="choices", display_name="Activation Mode", default_value="0", description="Who can activate this trigger.", choices=[ChoiceItem("0", "Players Only", ""), ChoiceItem("1", "NPCs Only", ""), ChoiceItem("2", "Players and NPCs", "")]), FlagsProperty(name="spawnflags", prop_type="flags", display_name="Spawn Flags", default_value="0", description="Special properties for this trigger.", flags=[FlagItem(1, "Touch activates", "", True), FlagItem(2, "Damage activates", "", False), FlagItem(4, "Use key activates", "", False)])], outputs=[IO("output", "OnTrigger", "void", "Fired when the trigger is activated.")])
-        fgd_file.add_element(trigger_entity)
-        npc_entity = EntityClass(class_type="NPCClass", name="npc_example", description="A generic non-player character.", studio="models/robot.mdl", inputs=[IO("input", "SetHealth", "integer", "Sets the NPC's health value.")], outputs=[IO("output", "OnDeath", "void", "Fired when the NPC dies.")])
-        fgd_file.add_element(npc_entity)
-    
-    # --- NEW CODE: Handlers for the New/Delete buttons ---
     def _add_new_element(self):
         if not self.fgd_file:
             messagebox.showwarning("No FGD Loaded", "Please open or create a new FGD file first.")
@@ -138,7 +116,7 @@ class FGDApplication(tk.Tk):
         if name in self.fgd_file.class_map:
             messagebox.showerror("Error", f"A class named '{name}' already exists.")
             return
-        
+
         class_type = simpledialog.askstring("New Class", "Enter class type (e.g., PointClass, SolidClass):", initialvalue="PointClass")
         if not class_type:
             return
@@ -152,22 +130,24 @@ class FGDApplication(tk.Tk):
         if not selected_ids:
             messagebox.showwarning("No Selection", "Please select an element to delete.")
             return
-        
+
         selected_name = self.elements_list.item(selected_ids[0], "text")
-        
+
         if not messagebox.askyesno("Confirm Deletion", f"Are you sure you want to permanently delete '{selected_name}'?"):
             return
 
-        element_to_delete = self.fgd_file.class_map.get(selected_name)
+        element_to_delete = next((el for el in self.fgd_file.elements if el.name == selected_name), None)
+        
         if element_to_delete:
             self.fgd_file.elements.remove(element_to_delete)
-            del self.fgd_file.class_map[selected_name]
-            if element_to_delete.class_type == "BaseClass" and selected_name in self.fgd_file.base_classes:
-                del self.fgd_file.base_classes[selected_name]
-            
+            if isinstance(element_to_delete, EntityClass):
+                if element_to_delete.name in self.fgd_file.class_map:
+                    del self.fgd_file.class_map[element_to_delete.name]
+                if element_to_delete.class_type == "BaseClass" and element_to_delete.name in self.fgd_file.base_classes:
+                    del self.fgd_file.base_classes[element_to_delete.name]
+
             self._update_elements_list()
             self._clear_properties_frame()
-    # --- END NEW CODE ---
 
     def _open_fgd_file(self):
         filepath = filedialog.askopenfilename(filetypes=[("FGD Files", "*.fgd"), ("All Files", "*.*")])
@@ -207,6 +187,7 @@ class FGDApplication(tk.Tk):
             messagebox.showwarning("No Data", "No FGD data to save.")
             return
         try:
+            # Ensure any focused widget updates its bound variable before saving
             focused_widget = self.focus_get()
             if focused_widget:
                 focused_widget.event_generate("<FocusOut>")
@@ -226,8 +207,8 @@ class FGDApplication(tk.Tk):
             self.elements_list.delete(iid)
         if self.fgd_file:
             for element in self.fgd_file.elements:
-                self.elements_list.insert("", "end", text=element.name, values=(element.class_type,))
-    
+                self.elements_list.insert("", "end", iid=element.name, text=element.name, values=(element.class_type,))
+
     def _on_element_select(self, event):
         selected_ids = self.elements_list.selection()
         if selected_ids:
@@ -241,10 +222,8 @@ class FGDApplication(tk.Tk):
     def _clear_properties_frame(self):
         for widget in self.properties_frame_inner.winfo_children():
             widget.destroy()
-        self._property_widgets.clear()
-        self._io_widgets = {'input': [], 'output': []}
 
-    def _display_element_details(self, element: EntityClass | IncludeDirective | None):
+    def _display_element_details(self, element: FGDElement | None):
         self._clear_properties_frame()
         self.selected_element = element
         if not element: return
@@ -255,10 +234,21 @@ class FGDApplication(tk.Tk):
             path_entry.insert(0, element.file_path)
             path_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
             path_entry.bind("<FocusOut>", lambda e, el=element: setattr(el, 'file_path', e.widget.get()))
-            self.properties_frame_inner.grid_columnconfigure(1, weight=1)
-            return
 
-        if isinstance(element, EntityClass):
+        elif isinstance(element, MapSize):
+            ttk.Label(self.properties_frame_inner, text="Map Bounds (min, max):", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+            ttk.Label(self.properties_frame_inner, text=f"{element.min_coord}, {element.max_coord}").grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        elif isinstance(element, Version):
+            ttk.Label(self.properties_frame_inner, text="FGD Version:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+            ttk.Label(self.properties_frame_inner, text=str(element.version_number)).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        elif isinstance(element, (MaterialExclusion, AutoVisGroup)):
+             ttk.Label(self.properties_frame_inner, text=element.name, font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+             ttk.Label(self.properties_frame_inner, text=element.description).grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+             ttk.Label(self.properties_frame_inner, text="(Editing not yet supported in GUI)").grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+        elif isinstance(element, EntityClass):
             row = 0
             ttk.Label(self.properties_frame_inner, text="Class Name:").grid(row=row, column=0, padx=5, pady=2, sticky="w")
             name_entry = ttk.Entry(self.properties_frame_inner)
@@ -281,7 +271,7 @@ class FGDApplication(tk.Tk):
             desc_text.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
             desc_text.bind("<FocusOut>", lambda e: self._update_element_description(element, desc_text.get("1.0", "end-1c")))
             row += 1
-            
+
             ttk.Label(self.properties_frame_inner, text="Base Classes:").grid(row=row, column=0, padx=5, pady=2, sticky="nw")
             base_text = tk.Text(self.properties_frame_inner, height=2, wrap="word")
             base_text.insert("1.0", ", ".join(element.base_classes))
@@ -289,40 +279,22 @@ class FGDApplication(tk.Tk):
             base_text.bind("<FocusOut>", lambda e: self._update_base_classes(element, base_text.get("1.0", "end-1c")))
             row += 1
 
-            def create_inline_attr(label, var_value, update_func, r):
-                ttk.Label(self.properties_frame_inner, text=label).grid(row=r, column=0, padx=5, pady=2, sticky="w")
-                var = tk.StringVar(value=var_value)
-                entry = ttk.Entry(self.properties_frame_inner, textvariable=var)
-                entry.grid(row=r, column=1, padx=5, pady=2, sticky="ew")
-                entry.bind("<FocusOut>", lambda e: update_func(element, var.get()))
-                return var
-            
-            self.color_var = create_inline_attr("Color (R G B):", f"{element.color[0]} {element.color[1]} {element.color[2]}" if element.color else "", self._update_inline_attribute_color, row)
-            row += 1
-            
-            ttk.Label(self.properties_frame_inner, text="Size (min, max):").grid(row=row, column=0, padx=5, pady=2, sticky="w")
-            size_frame = ttk.Frame(self.properties_frame_inner)
-            size_frame.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
-            self.size_min_var = tk.StringVar(value=' '.join(map(str,element.size[0])) if element.size else "")
-            self.size_max_var = tk.StringVar(value=' '.join(map(str,element.size[1])) if element.size else "")
-            size_min_entry = ttk.Entry(size_frame, textvariable=self.size_min_var)
-            size_max_entry = ttk.Entry(size_frame, textvariable=self.size_max_var)
-            size_min_entry.pack(side="left", fill="x", expand=True, padx=(0,2))
-            size_max_entry.pack(side="left", fill="x", expand=True, padx=(2,0))
-            size_min_entry.bind("<FocusOut>", lambda e: self._update_inline_attribute_size(element, (self.size_min_var.get(), self.size_max_var.get())))
-            size_max_entry.bind("<FocusOut>", lambda e: self._update_inline_attribute_size(element, (self.size_min_var.get(), self.size_max_var.get())))
-            row += 1
-            
-            self.studio_var = create_inline_attr("Studio Model:", element.studio or "", lambda el, val: setattr(el, 'studio', val or None), row)
-            row += 1
-            self.sprite_var = create_inline_attr("Sprite:", element.sprite or "", lambda el, val: setattr(el, 'sprite', val or None), row)
-            row += 1
+            helpers_frame = ttk.LabelFrame(self.properties_frame_inner, text="Editor Helpers")
+            helpers_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=5); row += 1
 
-            ttk.Button(self.properties_frame_inner, text="Add New Property", command=self._add_property_dialog).grid(row=row, column=0, columnspan=2, padx=5, pady=8, sticky="ew"); row+=1
-            
+            helper_row = 0
+            for key, val in element.helpers.items():
+                ttk.Label(helpers_frame, text=f"{key}:").grid(row=helper_row, column=0, padx=5, pady=2, sticky="w")
+                entry = ttk.Entry(helpers_frame)
+                entry.insert(0, val)
+                entry.grid(row=helper_row, column=1, padx=5, pady=2, sticky="ew")
+                entry.bind("<FocusOut>", lambda e, k=key: element.helpers.update({k: e.widget.get()}))
+                helper_row += 1
+            helpers_frame.grid_columnconfigure(1, weight=1)
+
             def create_section(title, items, ui_creator, add_cmd, r):
                 ttk.Separator(self.properties_frame_inner).grid(row=r, column=0, columnspan=2, sticky="ew", pady=(10,2)); r+=1
-                
+
                 title_frame = ttk.Frame(self.properties_frame_inner)
                 title_frame.grid(row=r, column=0, columnspan=2, sticky="ew", padx=5)
                 ttk.Label(title_frame, text=title, font="-weight bold").pack(side="left")
@@ -339,9 +311,8 @@ class FGDApplication(tk.Tk):
             row = create_section("Keyvalues:", element.properties, self._create_property_ui, self._add_property_dialog, row)
             row = create_section("Inputs:", element.inputs, lambda f, el, i: self._create_io_ui(f, el, i, "input"), self._add_input_dialog, row)
             row = create_section("Outputs:", element.outputs, lambda f, el, i: self._create_io_ui(f, el, i, "output"), self._add_output_dialog, row)
-            
-            self.properties_frame_inner.grid_columnconfigure(1, weight=1)
-        
+
+        self.properties_frame_inner.grid_columnconfigure(1, weight=1)
         self.properties_frame_inner.update_idletasks()
         self.properties_canvas.configure(scrollregion=self.properties_canvas.bbox("all"))
 
@@ -349,6 +320,7 @@ class FGDApplication(tk.Tk):
     def _add_output_dialog(self): self._add_io_dialog("output")
 
     def _add_io_dialog(self, io_type):
+        if not isinstance(self.selected_element, EntityClass): return
         name = simpledialog.askstring(f"Add {io_type.capitalize()}", f"Enter {io_type.capitalize()} Name:")
         if name:
             arg_type = simpledialog.askstring("Argument Type", "Enter Argument Type (e.g., void, string):", initialvalue="void")
@@ -356,13 +328,15 @@ class FGDApplication(tk.Tk):
                 new_io = IO(io_type, name, arg_type, "")
                 self.selected_element.add_io(new_io)
                 self._display_element_details(self.selected_element)
-    
+
     def _remove_io(self, io_obj: IO):
+        if not isinstance(self.selected_element, EntityClass): return
         if messagebox.askyesno("Confirm Removal", f"Remove {io_obj.io_type} '{io_obj.name}'?"):
             (self.selected_element.inputs if io_obj.io_type == "input" else self.selected_element.outputs).remove(io_obj)
             self._display_element_details(self.selected_element)
 
     def _add_property_dialog(self):
+        if not isinstance(self.selected_element, EntityClass): return
         name = simpledialog.askstring("Add Property", "Enter Property Name (e.g., targetname):")
         if name:
             prop_type = simpledialog.askstring("Add Property", "Enter Property Type (e.g., string, integer, choices, flags):", initialvalue="string")
@@ -376,6 +350,7 @@ class FGDApplication(tk.Tk):
                 self._display_element_details(self.selected_element)
 
     def _remove_property(self, prop: Property):
+        if not isinstance(self.selected_element, EntityClass): return
         if messagebox.askyesno("Confirm Removal", f"Remove property '{prop.name}'?"):
             self.selected_element.properties.remove(prop)
             self._display_element_details(self.selected_element)
@@ -416,7 +391,7 @@ class FGDApplication(tk.Tk):
     def _create_property_ui(self, parent, element, prop):
         prop_frame = ttk.LabelFrame(parent, text=f"{prop.name} ({prop.prop_type})")
         prop_frame.pack(fill="x", expand=True, pady=2)
-        
+
         top_frame = ttk.Frame(prop_frame)
         top_frame.pack(fill="x", expand=True, padx=5, pady=5)
         ttk.Label(top_frame, text="Display Name:").pack(side="left")
@@ -424,14 +399,19 @@ class FGDApplication(tk.Tk):
         dn_entry.insert(0, prop.display_name)
         dn_entry.pack(side="left", fill="x", expand=True, padx=5)
         dn_entry.bind("<FocusOut>", lambda e: setattr(prop, 'display_name', e.widget.get()))
-        
+
         ttk.Label(top_frame, text="Default:").pack(side="left")
         dv_entry = ttk.Entry(top_frame, width=10)
         dv_entry.insert(0, prop.default_value)
         dv_entry.pack(side="left", padx=5)
         dv_entry.bind("<FocusOut>", lambda e: setattr(prop, 'default_value', e.widget.get()))
-        
-        ttk.Button(top_frame, text="Remove Prop", command=lambda: self._remove_property(prop)).pack(side="right")
+
+        readonly_var = tk.BooleanVar(value=prop.readonly)
+        ttk.Checkbutton(top_frame, text="Readonly", variable=readonly_var, command=lambda: setattr(prop, 'readonly', readonly_var.get())).pack(side="left", padx=2)
+        report_var = tk.BooleanVar(value=prop.report)
+        ttk.Checkbutton(top_frame, text="Report", variable=report_var, command=lambda: setattr(prop, 'report', report_var.get())).pack(side="left", padx=2)
+
+        ttk.Button(top_frame, text="Remove", command=lambda: self._remove_property(prop)).pack(side="right")
 
         desc_text = tk.Text(prop_frame, height=2, wrap="word", width=40)
         desc_text.insert("1.0", prop.description)
@@ -449,7 +429,7 @@ class FGDApplication(tk.Tk):
         ttk.Label(choices_frame, text="Choices:", font="-weight bold").grid(row=0, column=0, sticky="w")
         ttk.Button(choices_frame, text="Add Choice", command=lambda: self._add_choice(prop)).grid(row=0, column=1, sticky="e")
         choices_frame.grid_columnconfigure(1, weight=1)
-        
+
         for i, choice in enumerate(prop.choices):
             f = ttk.Frame(choices_frame)
             f.grid(row=i+1, column=0, columnspan=2, sticky="ew", pady=2)
@@ -459,6 +439,11 @@ class FGDApplication(tk.Tk):
             ttk.Label(f, text="Name:").pack(side="left")
             n_entry = ttk.Entry(f); n_entry.insert(0, choice.display_name); n_entry.pack(side="left", fill="x", expand=True)
             n_entry.bind("<FocusOut>", lambda e, c=choice: setattr(c, 'display_name', e.widget.get()))
+
+            ttk.Label(f, text="Desc:").pack(side="left", padx=(5,0))
+            d_entry = ttk.Entry(f); d_entry.insert(0, choice.description); d_entry.pack(side="left", fill="x", expand=True)
+            d_entry.bind("<FocusOut>", lambda e, c=choice: setattr(c, 'description', e.widget.get()))
+
             ttk.Button(f, text="X", width=2, command=lambda c=choice: self._remove_choice(prop, c)).pack(side="right", padx=2)
 
     def _create_flags_ui(self, parent, prop: FlagsProperty):
@@ -477,9 +462,14 @@ class FGDApplication(tk.Tk):
             ttk.Label(f, text="Name:").pack(side="left")
             n_entry = ttk.Entry(f); n_entry.insert(0, flag.display_name); n_entry.pack(side="left", fill="x", expand=True)
             n_entry.bind("<FocusOut>", lambda e, fl=flag: setattr(fl, 'display_name', e.widget.get()))
-            
+
             ticked_var = tk.BooleanVar(value=flag.default_ticked)
             ttk.Checkbutton(f, text="On?", variable=ticked_var, command=lambda fl=flag, v=ticked_var: setattr(fl, 'default_ticked', v.get())).pack(side="left", padx=5)
+
+            ttk.Label(f, text="Desc:").pack(side="left", padx=(5,0))
+            d_entry = ttk.Entry(f); d_entry.insert(0, flag.description); d_entry.pack(side="left", fill="x", expand=True)
+            d_entry.bind("<FocusOut>", lambda e, fl=flag: setattr(fl, 'description', e.widget.get()))
+
             ttk.Button(f, text="X", width=2, command=lambda fl=flag: self._remove_flag(prop, fl)).pack(side="right", padx=2)
 
     def _update_element_name(self, element: EntityClass, new_name: str):
@@ -487,17 +477,22 @@ class FGDApplication(tk.Tk):
         old_name = element.name
         if self.fgd_file.class_map.get(new_name):
             messagebox.showerror("Error", f"Class name '{new_name}' already exists.")
+            # Revert the entry text
+            self._display_element_details(element)
             return
-        
+
         del self.fgd_file.class_map[old_name]
         if old_name in self.fgd_file.base_classes:
             del self.fgd_file.base_classes[old_name]
-        
+
         element.name = new_name
         self.fgd_file.class_map[new_name] = element
         if element.class_type == "BaseClass":
             self.fgd_file.base_classes[new_name] = element
         self._update_elements_list()
+        # Reselect the item with its new name
+        self.elements_list.selection_set(new_name)
+
 
     def _update_class_type(self, element: EntityClass, new_type: str):
         if element.class_type == new_type: return
@@ -507,24 +502,13 @@ class FGDApplication(tk.Tk):
         if new_type == "BaseClass":
             self.fgd_file.base_classes[element.name] = element
         self._update_elements_list()
-    
+
     def _update_element_description(self, element: EntityClass, new_desc: str):
         element.description = new_desc
 
     def _update_base_classes(self, element: EntityClass, new_bases_str: str):
         element.base_classes = [b.strip() for b in new_bases_str.split(',') if b.strip()]
 
-    def _update_inline_attribute_color(self, element: EntityClass, new_val: str):
-        try:
-            rgb = tuple(map(int, new_val.split()))
-            if len(rgb) == 3: element.color = rgb
-            else: element.color = None
-        except (ValueError, TypeError): element.color = None
-
-    def _update_inline_attribute_size(self, element: EntityClass, new_val: tuple[str, str]):
-        try:
-            min_c = tuple(map(int, new_val[0].split()))
-            max_c = tuple(map(int, new_val[1].split()))
-            if len(min_c) == 3 and len(max_c) == 3: element.size = (min_c, max_c)
-            else: element.size = None
-        except (ValueError, TypeError): element.size = None
+if __name__ == "__main__":
+    app = FGDApplication()
+    app.mainloop()
