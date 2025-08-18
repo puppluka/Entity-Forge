@@ -2,7 +2,7 @@ __pycache__/
 build/
 dist/
 
-main.spec
+*.spec
 
 # Remove testing FGD file (by xaפe)
 quake2_rerelease.fgd
