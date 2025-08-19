@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
 import re
+import traceback
 
 # Import the core logic modules
 from fgd_parser import FGDParser
@@ -136,7 +137,7 @@ class FGDApplication(tk.Tk):
         if not messagebox.askyesno("Confirm Deletion", f"Are you sure you want to permanently delete '{selected_name}'?"):
             return
 
-        element_to_delete = next((el for el in self.fgd_file.elements if el.name == selected_name), None)
+        element_to_delete = next((el for el in self.fgd_file.elements if hasattr(el, 'name') and el.name == selected_name), None)
         
         if element_to_delete:
             self.fgd_file.elements.remove(element_to_delete)
@@ -161,6 +162,7 @@ class FGDApplication(tk.Tk):
                 self._clear_properties_frame()
                 messagebox.showinfo("Load Successful", f"'{os.path.basename(filepath)}' loaded.")
             except Exception as e:
+                traceback.print_exc() # Print full traceback to terminal
                 messagebox.showerror("Load Error", f"Failed to load FGD file: {e}")
                 self.fgd_file = None
                 self.current_fgd_path = None
@@ -207,7 +209,14 @@ class FGDApplication(tk.Tk):
             self.elements_list.delete(iid)
         if self.fgd_file:
             for element in self.fgd_file.elements:
-                self.elements_list.insert("", "end", iid=element.name, text=element.name, values=(element.class_type,))
+                try:
+                    iid = str(element.name)
+                    self.elements_list.insert("", "end", iid=iid, text=str(element.name), values=(element.class_type,))
+                except tk.TclError as e:
+                    print(f"Error adding element to Treeview: {e}")
+                    print(f"Duplicate element name: '{element.name}', type: '{element.class_type}'")
+                    messagebox.showerror("GUI Error", f"Failed to display FGD elements. Duplicate element name found: '{element.name}'. Check terminal for details.")
+                    return
 
     def _on_element_select(self, event):
         selected_ids = self.elements_list.selection()

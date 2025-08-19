@@ -1,5 +1,6 @@
 # fgd_serializer.py
 
+import re
 import fgd_model
 
 class FGDSerializer:
@@ -69,17 +70,34 @@ class FGDSerializer:
         if entity_class.base_classes:
             header_parts.append(f"base({', '.join(entity_class.base_classes)})")
         
-        # UPDATED: Serialize all helpers from the dictionary
+        # Serialize all helpers from the dictionary
         for key, args in entity_class.helpers.items():
-            header_parts.append(f"{key}({args})")
+            # Special handling for potentially multi-line model helper
+            if '\n' in args:
+                # Indent the multi-line arguments for readability
+                indented_args = "\n".join([" " * 4 + line.strip() for line in args.strip().split('\n')])
+                header_parts.append(f"{key}(\n{indented_args}\n)")
+            else:
+                header_parts.append(f"{key}({args})")
         
-        # Escape quotes in description for serialization
+        # Escape quotes in description for serialization and handle multiline
         description = entity_class.description.replace('"', '\\"')
-        header_parts.append(f'= {entity_class.name}')
-        if description:
-            header_parts.append(f': "{description}"')
         
-        class_lines.append(" ".join(header_parts))
+        header_line = " ".join(header_parts)
+        header_line += f' = {entity_class.name}'
+
+        if description:
+            # Join multiline descriptions with the '+' character as per FGD spec for older tools
+            if '\n' in description:
+                description_lines = description.split('\n')
+                formatted_desc = f'"{description_lines[0]} " +'
+                for line in description_lines[1:]:
+                    formatted_desc += f'\n    "{line.strip()} " +'
+                header_line += f' : {formatted_desc.rstrip(" +")}'
+            else:
+                 header_line += f' : "{description}"'
+
+        class_lines.append(header_line)
         class_lines.append("[")
 
         # Inputs, Outputs, and Properties
@@ -105,30 +123,30 @@ class FGDSerializer:
         indent = "    " * indent_level
         prop_lines = []
 
-        # UPDATED: Add readonly and report keywords
         prop_header = f"{indent}{prop.name}({prop.prop_type})"
         if prop.readonly: prop_header += " readonly"
         if prop.report: prop_header += " report"
 
         # Header: ... : "DisplayName" : "DefaultValue" : "Description"
         details = []
-        if prop.display_name or prop.default_value or prop.description:
-            # The FGD format uses an empty field for "no default" when a description is present
-            default_val_str = f'"{prop.default_value}"' if prop.default_value else ""
-            desc_str = f'"{prop.description.replace("\"", "\\\"")}"' if prop.description else ""
-            
-            # Logic to avoid trailing colons
-            if prop.description:
-                details = [f'"{prop.display_name}"', default_val_str, desc_str]
-            elif prop.default_value:
-                 details = [f'"{prop.display_name}"', default_val_str]
-            elif prop.display_name:
-                details = [f'"{prop.display_name}"']
+        # FGD format requires all preceding colons.
+        if prop.description:
+            display_str = f'"{prop.display_name}"'
+            default_val_str = f'"{prop.default_value}"' if isinstance(prop.default_value, str) else str(prop.default_value)
+            desc_str = f'"{prop.description.replace("\"", "\\\"")}"'
+            details = [display_str, default_val_str, desc_str]
+        elif prop.default_value:
+            display_str = f'"{prop.display_name}"'
+            default_val_str = f'"{prop.default_value}"' if isinstance(prop.default_value, str) else str(prop.default_value)
+            details = [display_str, default_val_str]
+        elif prop.display_name:
+            display_str = f'"{prop.display_name}"'
+            details = [display_str]
         
         if details:
             prop_header += " : " + " : ".join(details)
         
-        is_block_prop = isinstance(prop, (fgd_model.ChoicesProperty, fgd_model.FlagsProperty))
+        is_block_prop = isinstance(prop, (fgd_model.ChoicesProperty, fgd_model.FlagsProperty)) and (prop.choices or prop.flags)
         if is_block_prop:
             prop_header += " ="
 
@@ -150,12 +168,9 @@ class FGDSerializer:
 
     def _serialize_choice_item(self, choice: fgd_model.ChoiceItem, indent_level: int) -> str:
         indent = "    " * indent_level
-        # UPDATED: Add optional description
-        val_str = f'"{choice.value}"'
-        if not re.match(r'^-?\d+(\.\d+)?$', choice.value): # Quote if not a number
-             val_str = f'"{choice.value}"'
-        else:
-            val_str = choice.value
+        
+        # Quote value if it's not a plain number
+        val_str = f'"{choice.value}"' if not re.match(r'^-?\d+(\.\d+)?$', choice.value) else choice.value
 
         line = f'{indent}{val_str} : "{choice.display_name}"'
         if choice.description:
@@ -164,7 +179,6 @@ class FGDSerializer:
 
     def _serialize_flag_item(self, flag: fgd_model.FlagItem, indent_level: int) -> str:
         indent = "    " * indent_level
-        # UPDATED: Add optional description
         line = f'{indent}{flag.value} : "{flag.display_name}" : {int(flag.default_ticked)}'
         if flag.description:
             line += f' : "{flag.description.replace("\"", "\\\"")}"'
