@@ -1,7 +1,12 @@
+# Excluded Directories
 __pycache__/
+backup/
 build/
 dist/
 
+# Application Data
+icon.ico
+file_version_info.txt
 *.spec
 
 # Remove testing FGD file (by xaפe)

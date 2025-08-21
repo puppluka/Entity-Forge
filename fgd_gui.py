@@ -14,13 +14,19 @@ from fgd_model import (
     Version, AutoVisGroup, MaterialExclusion
 )
 from fgd_serializer import FGDSerializer
+from about import AboutWindow
+# --- NEW: Import the theme module ---
+import theme
 
 class FGDApplication(tk.Tk):
     """Main Tkinter application class for the FGD Editor GUI."""
     def __init__(self):
         super().__init__()
-        self.title("FGD Editor")
+        self.title("Entity Forge - FGD Editor")
         self.geometry("1200x800")
+
+        # --- NEW: Initialize the style object early ---
+        self.style = ttk.Style(self)
 
         self.fgd_file: FGDFile | None = None
         self.current_fgd_path: str | None = None
@@ -30,8 +36,14 @@ class FGDApplication(tk.Tk):
         self.parser = FGDParser()
         self.serializer = FGDSerializer()
 
+        # --- NEW: Initialize the theme before creating widgets ---
+        theme.setup_theme(self)
+
         self._create_widgets()
         self._setup_menu()
+
+        # --- NEW: Apply theme to menus after they are created ---
+        theme.switch_theme(self, dark_mode=True)
 
     def _create_widgets(self):
         self.main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
@@ -47,9 +59,9 @@ class FGDApplication(tk.Tk):
 
         self.elements_list = ttk.Treeview(list_frame, columns=("Type",), show="tree headings")
         self.elements_list.heading("#0", text="Name", anchor="w")
-        self.elements_list.column("#0", width=200, minwidth=150)
+        self.elements_list.column("#0", width=200, minwidth=150, stretch=tk.YES)
         self.elements_list.heading("Type", text="Type", anchor="w")
-        self.elements_list.column("Type", width=100, minwidth=80, stretch=tk.NO)
+        self.elements_list.column("Type", width=100, minwidth=80, stretch=tk.YES)
 
         self.elements_list_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.elements_list.yview)
         self.elements_list.configure(yscrollcommand=self.elements_list_scrollbar.set)
@@ -86,10 +98,10 @@ class FGDApplication(tk.Tk):
         self.properties_canvas.bind('<Configure>', lambda e: self.properties_canvas.itemconfig(self.properties_frame_inner_id, width=e.width))
 
     def _setup_menu(self):
-        menubar = tk.Menu(self)
-        self.config(menu=menubar)
-        file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="File", menu=file_menu)
+        self.menubar = tk.Menu(self, tearoff=0)
+        self.config(menu=self.menubar)
+        file_menu = tk.Menu(self.menubar, tearoff=0)
+        self.menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="New", command=self._new_fgd_file)
         file_menu.add_separator()
         file_menu.add_command(label="Open", command=self._open_fgd_file)
@@ -97,6 +109,16 @@ class FGDApplication(tk.Tk):
         file_menu.add_command(label="Save As...", command=self._save_fgd_file_as)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
+
+        # --- NEW: Theme menu and commands ---
+        theme_menu = tk.Menu(self.menubar, tearoff=0)
+        self.menubar.add_cascade(label="Theme", menu=theme_menu)
+        theme_menu.add_command(label="Dark", command=lambda: self._switch_theme(dark_mode=True))
+        theme_menu.add_command(label="Light", command=lambda: self._switch_theme(dark_mode=False))
+
+        help_menu = tk.Menu(self.menubar, tearoff=0)
+        self.menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About", command=self.show_about_window)
 
     def _new_fgd_file(self):
         self.fgd_file = FGDFile()
@@ -231,11 +253,19 @@ class FGDApplication(tk.Tk):
     def _clear_properties_frame(self):
         for widget in self.properties_frame_inner.winfo_children():
             widget.destroy()
+        # --- NEW: Ensure canvas is correctly colored after clearing ---
+        canvas_bg = self.style.lookup("TFrame", "background")
+        self.properties_canvas.config(bg=canvas_bg)
 
     def _display_element_details(self, element: FGDElement | None):
         self._clear_properties_frame()
         self.selected_element = element
         if not element: return
+
+        # --- NEW: Get text widget colors from the current theme ---
+        text_bg = self.style.lookup("TEntry", "fieldbackground")
+        text_fg = self.style.lookup("TEntry", "foreground")
+        text_insert_color = self.style.lookup("TEntry", "insertcolor")
 
         if isinstance(element, IncludeDirective):
             ttk.Label(self.properties_frame_inner, text="Include Path:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -274,15 +304,20 @@ class FGDApplication(tk.Tk):
             type_combo.bind("<<ComboboxSelected>>", lambda e: self._update_class_type(element, type_combo.get()))
             row += 1
 
+            # --- MODIFIED: Apply theme colors to tk.Text widgets ---
             ttk.Label(self.properties_frame_inner, text="Description:").grid(row=row, column=0, padx=5, pady=2, sticky="nw")
-            desc_text = tk.Text(self.properties_frame_inner, height=3, wrap="word")
+            desc_text = tk.Text(self.properties_frame_inner, height=3, wrap="word",
+                                bg=text_bg, fg=text_fg, insertbackground=text_insert_color,
+                                relief="flat", borderwidth=1, highlightthickness=0)
             desc_text.insert("1.0", element.description)
             desc_text.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
             desc_text.bind("<FocusOut>", lambda e: self._update_element_description(element, desc_text.get("1.0", "end-1c")))
             row += 1
 
             ttk.Label(self.properties_frame_inner, text="Base Classes:").grid(row=row, column=0, padx=5, pady=2, sticky="nw")
-            base_text = tk.Text(self.properties_frame_inner, height=2, wrap="word")
+            base_text = tk.Text(self.properties_frame_inner, height=2, wrap="word",
+                                bg=text_bg, fg=text_fg, insertbackground=text_insert_color,
+                                relief="flat", borderwidth=1, highlightthickness=0)
             base_text.insert("1.0", ", ".join(element.base_classes))
             base_text.grid(row=row, column=1, padx=5, pady=2, sticky="ew")
             base_text.bind("<FocusOut>", lambda e: self._update_base_classes(element, base_text.get("1.0", "end-1c")))
@@ -327,6 +362,9 @@ class FGDApplication(tk.Tk):
 
     def _add_input_dialog(self): self._add_io_dialog("input")
     def _add_output_dialog(self): self._add_io_dialog("output")
+
+    def show_about_window(self):
+        AboutWindow(self, self.style, title="About Entity Forge", help_file="help.txt")
 
     def _add_io_dialog(self, io_type):
         if not isinstance(self.selected_element, EntityClass): return
@@ -401,6 +439,11 @@ class FGDApplication(tk.Tk):
         prop_frame = ttk.LabelFrame(parent, text=f"{prop.name} ({prop.prop_type})")
         prop_frame.pack(fill="x", expand=True, pady=2)
 
+        # --- NEW: Get text colors from theme here as well ---
+        text_bg = self.style.lookup("TEntry", "fieldbackground")
+        text_fg = self.style.lookup("TEntry", "foreground")
+        text_insert_color = self.style.lookup("TEntry", "insertcolor")
+
         top_frame = ttk.Frame(prop_frame)
         top_frame.pack(fill="x", expand=True, padx=5, pady=5)
         ttk.Label(top_frame, text="Display Name:").pack(side="left")
@@ -422,7 +465,10 @@ class FGDApplication(tk.Tk):
 
         ttk.Button(top_frame, text="Remove", command=lambda: self._remove_property(prop)).pack(side="right")
 
-        desc_text = tk.Text(prop_frame, height=2, wrap="word", width=40)
+        # --- MODIFIED: Apply theme colors to this tk.Text widget ---
+        desc_text = tk.Text(prop_frame, height=2, wrap="word", width=40,
+                            bg=text_bg, fg=text_fg, insertbackground=text_insert_color,
+                            relief="flat", borderwidth=1, highlightthickness=0)
         desc_text.insert("1.0", prop.description)
         desc_text.pack(fill="x", expand=True, padx=5, pady=(0,5))
         desc_text.bind("<FocusOut>", lambda e: setattr(prop, 'description', e.widget.get("1.0", "end-1c")))
@@ -502,7 +548,6 @@ class FGDApplication(tk.Tk):
         # Reselect the item with its new name
         self.elements_list.selection_set(new_name)
 
-
     def _update_class_type(self, element: EntityClass, new_type: str):
         if element.class_type == new_type: return
         if element.class_type == "BaseClass" and element.name in self.fgd_file.base_classes:
@@ -517,3 +562,10 @@ class FGDApplication(tk.Tk):
 
     def _update_base_classes(self, element: EntityClass, new_bases_str: str):
         element.base_classes = [b.strip() for b in new_bases_str.split(',') if b.strip()]
+
+    # --- NEW: Function to handle theme switching and UI refresh ---
+    def _switch_theme(self, dark_mode: bool):
+        """Applies the selected theme and refreshes the properties view."""
+        theme.switch_theme(self, dark_mode)
+        # Re-display details to ensure all widgets get the new theme colors
+        self._display_element_details(self.selected_element)

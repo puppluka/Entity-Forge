@@ -1,0 +1,86 @@
+*******************************************************************************
+Entity Forge
+by Pup Luka
+Version 0.5-beta
+*******************************************************************************
+Send all inquiries/bug reports to aeroxsoftware@null.net
+*******************************************************************************
+
+Terms:
+
+	FGD File
+A text file that defines the entities, properties, and I/O for a game's map editor. Entity Forge is a GUI tool for creating and editing these files without the need for manual text editing.
+
+	Entity
+A game object defined within the FGD file, such as a monster, a light, or a door. Each entity has a set of key/value properties and can have inputs and outputs for inter-entity communication.
+
+	BaseClass
+A special type of entity that can be inherited by other entities, allowing for shared properties and behaviors. This promotes code reuse and simplifies FGD file management.
+
+	Properties
+The attributes of an entity, defined by a key-value pair. A property can be a single value, a choice from a list, or a set of flags. The type of a property determines how it is displayed and edited in the GUI.
+
+	I/O
+Inputs and Outputs. These are signals that entities can send and receive, allowing mappers to create complex scripted events and interactions within the game world.
+
+Using Entity Forge:
+
+*******************************************************************************
+
+	<-- File Menu -->
+
+New
+Creates blank FGD data file.
+
+Open
+Opens an existing FGD file.
+
+Save
+Saves the current FGD file. If the file has not been saved before, it will prompt for a filename.
+
+Save As
+Saves the current FGD file to a new location with a different name.
+
+Exit
+Closes the program.
+
+*******************************************************************************
+
+	<-- Interface -->
+
+Tree View
+On the left side of the window, a tree view displays all the elements in your FGD file. Click on any item to select it.
+
+Form View
+On the right side of the window, a form displays the editable properties of the currently selected item from the tree view.
+
+*******************************************************************************
+
+	<-- Troubleshooting -->
+
+File Load Errors
+If you encounter an error when loading a file, it is likely due to a syntax issue in the FGD file itself. The program should provide an error message with details about the problem.
+
+Program Not Responding
+If the program appears to freeze, it may be processing a very large or complex FGD file. Please be patient and allow it to complete the operation.
+
+*******************************************************************************
+
+	<-- CREDITS -->
+
+Pup Luka - Developer
+Chuma & Paril - Troubleshooting
+
+*******************************************************************************
+
+	<-- TODO -->
+
+- The GUI does not yet allow you to create or edit display directives like @mapsize, @version, etc. at this time. They can be viewed/parsed effectively.
+
+- The "New" button in the element list needs to be updated to allow for the creation of these new directive types, in addition to entity classes.
+
+- Dedicated editing interfaces need to be created in the right-hand panel to allow the values of these directives (e.g., the version number for @version or the coordinates for @mapsize) to be modified.
+
+- Need to add logic to handle nested blocks like 'choices' or 'flags'. The parser is currently skipping them. This involves checking for `[` and `]` and calling the correct parsing method.
+
+- Maybe update code from tkinter to ttk?
