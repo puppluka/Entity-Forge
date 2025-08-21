@@ -48,6 +48,8 @@ class AboutWindow(tk.Toplevel):
         # self.transient(master)
         # self.grab_set()
         # self.wait_window(self)
+        
+        self.center_on_screen()
 
     def create_widgets(self):
         """Builds the widgets for the about window."""
@@ -111,7 +113,7 @@ class AboutWindow(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load help file: {e}")
             self.destroy()
-
+"""
 if __name__ == '__main__':
     # This block is for testing the AboutWindow as a standalone program.
     # It will not run when imported into another script.
@@ -142,3 +144,4 @@ if __name__ == '__main__':
     about_button.pack(pady=20)
     
     root.mainloop()
+"""
