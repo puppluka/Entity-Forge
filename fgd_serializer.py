@@ -146,7 +146,14 @@ class FGDSerializer:
         if details:
             prop_header += " : " + " : ".join(details)
         
-        is_block_prop = isinstance(prop, (fgd_model.ChoicesProperty, fgd_model.FlagsProperty)) and (prop.choices or prop.flags)
+        # --- FIX ---
+        # The original line caused an AttributeError because it tried to access `prop.choices` on a FlagsProperty object
+        # (which doesn't have that attribute) and vice-versa.
+        # This new logic correctly checks the instance type first, then checks if the corresponding list (`.choices` or `.flags`)
+        # is populated. The `or` condition ensures that if the first part is true, the second part isn't evaluated, preventing the error.
+        is_block_prop = (isinstance(prop, fgd_model.ChoicesProperty) and prop.choices) or \
+                        (isinstance(prop, fgd_model.FlagsProperty) and prop.flags)
+        
         if is_block_prop:
             prop_header += " ="
 
