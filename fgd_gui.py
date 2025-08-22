@@ -73,8 +73,20 @@ class FGDApplication(tk.Tk):
         button_frame = ttk.Frame(self.elements_frame)
         button_frame.pack(fill="x", padx=5, pady=5)
 
-        new_button = ttk.Button(button_frame, text="New Class", command=self._add_new_element)
-        new_button.pack(side="left", fill="x", expand=True, padx=(0, 2))
+        # --- MODIFIED: Changed "New Class" button to a Menubutton for all element types ---
+        new_menubutton = ttk.Menubutton(button_frame, text="New...")
+        new_menu = tk.Menu(new_menubutton, tearoff=0)
+        new_menubutton["menu"] = new_menu
+
+        new_menu.add_command(label="Entity Class", command=self._add_entity_class)
+        new_menu.add_separator()
+        new_menu.add_command(label="Include Directive", command=lambda: self._add_directive("include"))
+        new_menu.add_command(label="Map Size", command=lambda: self._add_directive("mapsize"))
+        new_menu.add_command(label="Version", command=lambda: self._add_directive("version"))
+        new_menu.add_command(label="Material Exclusion", command=lambda: self._add_directive("materialexclusion"))
+        new_menu.add_command(label="AutoVisGroup", command=lambda: self._add_directive("autovisgroup"))
+        
+        new_menubutton.pack(side="left", fill="x", expand=True, padx=(0, 2))
 
         delete_button = ttk.Button(button_frame, text="Delete Selected", command=self._delete_selected_element)
         delete_button.pack(side="right", fill="x", expand=True, padx=(2, 0))
@@ -128,47 +140,72 @@ class FGDApplication(tk.Tk):
         self._clear_properties_frame()
         messagebox.showinfo("New File", "Created a new, empty FGD file.")
 
-    def _add_new_element(self):
+    def _add_entity_class(self):
         if not self.fgd_file:
             messagebox.showwarning("No FGD Loaded", "Please open or create a new FGD file first.")
             return
 
         name = simpledialog.askstring("New Class", "Enter the new class name:")
-        if not name:
-            return
+        if not name: return
         if name in self.fgd_file.class_map:
             messagebox.showerror("Error", f"A class named '{name}' already exists.")
             return
 
-        class_type = simpledialog.askstring("New Class", "Enter class type (e.g., PointClass, SolidClass):", initialvalue="PointClass")
-        if not class_type:
-            return
+        class_type = simpledialog.askstring("New Class", "Enter class type:", initialvalue="PointClass")
+        if not class_type: return
 
         new_element = EntityClass(class_type=class_type, name=name, description="A new entity class.")
         self.fgd_file.add_element(new_element)
         self._update_elements_list()
+        self._select_element_in_tree(new_element.name)
+
+    def _add_directive(self, directive_type: str):
+        if not self.fgd_file:
+            messagebox.showwarning("No FGD Loaded", "Please open or create a new FGD file first.")
+            return
+
+        new_element = None
+        if directive_type == "include":
+            path = simpledialog.askstring("New Include", "Enter file path:", initialvalue="common/base.fgd")
+            if path: new_element = IncludeDirective(path)
+        elif directive_type == "mapsize":
+            coords = simpledialog.askstring("New Map Size", "Enter min, max coordinates:", initialvalue="-16384, 16384")
+            if coords:
+                try:
+                    min_c, max_c = map(int, coords.replace(" ", "").split(','))
+                    new_element = MapSize(min_c, max_c)
+                except (ValueError, IndexError):
+                    messagebox.showerror("Invalid Input", "Please enter two comma-separated integers.")
+        elif directive_type == "version":
+            ver = simpledialog.askinteger("New Version", "Enter version number:", initialvalue=1)
+            if ver is not None: new_element = Version(ver)
+        elif directive_type == "materialexclusion":
+            new_element = MaterialExclusion([])
+        elif directive_type == "autovisgroup":
+            name = simpledialog.askstring("New AutoVisGroup", "Enter parent group name:", initialvalue="Parent Group")
+            if name: new_element = AutoVisGroup(name, [])
+        
+        if new_element:
+            self.fgd_file.add_element(new_element)
+            self._update_elements_list()
+            self._select_element_in_tree(new_element.name)
 
     def _delete_selected_element(self):
         selected_ids = self.elements_list.selection()
         if not selected_ids:
             messagebox.showwarning("No Selection", "Please select an element to delete.")
             return
-
-        selected_name = self.elements_list.item(selected_ids[0], "text")
+        
+        selected_id = selected_ids[0]
+        selected_name = self.elements_list.item(selected_id, "text")
 
         if not messagebox.askyesno("Confirm Deletion", f"Are you sure you want to permanently delete '{selected_name}'?"):
             return
-
-        element_to_delete = next((el for el in self.fgd_file.elements if hasattr(el, 'name') and el.name == selected_name), None)
         
-        if element_to_delete:
-            self.fgd_file.elements.remove(element_to_delete)
-            if isinstance(element_to_delete, EntityClass):
-                if element_to_delete.name in self.fgd_file.class_map:
-                    del self.fgd_file.class_map[element_to_delete.name]
-                if element_to_delete.class_type == "BaseClass" and element_to_delete.name in self.fgd_file.base_classes:
-                    del self.fgd_file.base_classes[element_to_delete.name]
+        element_to_delete = self.fgd_file.get_element_by_id(selected_id)
 
+        if element_to_delete:
+            self.fgd_file.remove_element(element_to_delete)
             self._update_elements_list()
             self._clear_properties_frame()
 
@@ -224,29 +261,47 @@ class FGDApplication(tk.Tk):
             self.title(f"FGD Editor - {os.path.basename(filepath)}")
             messagebox.showinfo("Save Successful", f"File saved to {os.path.basename(filepath)}")
         except Exception as e:
+            traceback.print_exc()
             messagebox.showerror("Save Error", f"Failed to save file: {e}")
 
     def _update_elements_list(self):
+        # Store selection to restore it later
+        selection = self.elements_list.selection()
+        
         for iid in self.elements_list.get_children():
             self.elements_list.delete(iid)
+            
         if self.fgd_file:
-            for element in self.fgd_file.elements:
+            for i, element in enumerate(self.fgd_file.elements):
+                element_id = f"item_{i}"
+                self.fgd_file.element_id_map[element_id] = element
                 try:
-                    iid = str(element.name)
-                    self.elements_list.insert("", "end", iid=iid, text=str(element.name), values=(element.class_type,))
+                    self.elements_list.insert("", "end", iid=element_id, text=str(element.name), values=(element.class_type,))
                 except tk.TclError as e:
-                    print(f"Error adding element to Treeview: {e}")
-                    print(f"Duplicate element name: '{element.name}', type: '{element.class_type}'")
-                    messagebox.showerror("GUI Error", f"Failed to display FGD elements. Duplicate element name found: '{element.name}'. Check terminal for details.")
-                    return
+                    print(f"Error adding element to Treeview: {e}. Element: {element.name}, Type: {element.class_type}")
+                    messagebox.showerror("GUI Error", f"Failed to display an FGD element. Check terminal for details.")
+
+        # Restore selection
+        if selection:
+            try:
+                self.elements_list.selection_set(selection)
+            except tk.TclError:
+                pass # Item may have been deleted
+
+    def _select_element_in_tree(self, element_name: str):
+        """Finds and selects an element in the Treeview by its display name."""
+        for iid in self.elements_list.get_children():
+            if self.elements_list.item(iid, "text") == element_name:
+                self.elements_list.selection_set(iid)
+                self.elements_list.focus(iid)
+                self.elements_list.see(iid)
+                return
 
     def _on_element_select(self, event):
         selected_ids = self.elements_list.selection()
         if selected_ids:
-            selected_name = self.elements_list.item(selected_ids[0], "text")
-            if self.fgd_file:
-                element = next((el for el in self.fgd_file.elements if el.name == selected_name), None)
-                self._display_element_details(element)
+            element = self.fgd_file.get_element_by_id(selected_ids[0])
+            self._display_element_details(element)
         else:
             self._clear_properties_frame()
 
@@ -273,32 +328,75 @@ class FGDApplication(tk.Tk):
         self.selected_element = element
         if not element: return
 
-        # --- MODIFIED: Get text widget colors from the theme using the safe helper ---
-        # Fallbacks are provided for themes that may return empty strings or lack options.
         text_fg = self._get_style_color("TEntry", "foreground", "black")
         text_bg = self._get_style_color("TEntry", "fieldbackground", "white")
-        # The insert color should default to the foreground color.
         text_insert_color = self._get_style_color("TEntry", "insertcolor", text_fg)
 
+        # --- MODIFIED: Added editable interfaces for all directive types ---
         if isinstance(element, IncludeDirective):
             ttk.Label(self.properties_frame_inner, text="Include Path:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
             path_entry = ttk.Entry(self.properties_frame_inner)
             path_entry.insert(0, element.file_path)
             path_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-            path_entry.bind("<FocusOut>", lambda e, el=element: setattr(el, 'file_path', e.widget.get()))
+            path_entry.bind("<FocusOut>", lambda e, el=element: self._update_include_path(el, e.widget.get()))
 
         elif isinstance(element, MapSize):
-            ttk.Label(self.properties_frame_inner, text="Map Bounds (min, max):", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-            ttk.Label(self.properties_frame_inner, text=f"{element.min_coord}, {element.max_coord}").grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            ttk.Label(self.properties_frame_inner, text="Min Coordinate:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+            min_entry = ttk.Entry(self.properties_frame_inner, width=10)
+            min_entry.insert(0, str(element.min_coord))
+            min_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            min_entry.bind("<FocusOut>", lambda e, el=element: self._update_mapsize(el, 'min', e.widget))
+
+            ttk.Label(self.properties_frame_inner, text="Max Coordinate:", font="-weight bold").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+            max_entry = ttk.Entry(self.properties_frame_inner, width=10)
+            max_entry.insert(0, str(element.max_coord))
+            max_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+            max_entry.bind("<FocusOut>", lambda e, el=element: self._update_mapsize(el, 'max', e.widget))
 
         elif isinstance(element, Version):
             ttk.Label(self.properties_frame_inner, text="FGD Version:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-            ttk.Label(self.properties_frame_inner, text=str(element.version_number)).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            ver_entry = ttk.Entry(self.properties_frame_inner, width=10)
+            ver_entry.insert(0, str(element.version_number))
+            ver_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            ver_entry.bind("<FocusOut>", lambda e, el=element: self._update_version(el, e.widget))
+            
+        elif isinstance(element, MaterialExclusion):
+            ttk.Label(self.properties_frame_inner, text="Excluded Paths:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="nw")
+            desc_label = ttk.Label(self.properties_frame_inner, text="(One full material path per line)")
+            desc_label.grid(row=1, column=0, columnspan=2, padx=5, pady=(0,5), sticky="w")
+            
+            ex_text = tk.Text(self.properties_frame_inner, height=10, wrap="word",
+                              bg=text_bg, fg=text_fg, insertbackground=text_insert_color,
+                              relief="flat", borderwidth=1, highlightthickness=0)
+            ex_text.insert("1.0", "\n".join(element.excluded_paths))
+            ex_text.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+            ex_text.bind("<FocusOut>", lambda e, el=element: self._update_material_exclusion(el, e.widget.get("1.0", "end-1c")))
 
-        elif isinstance(element, (MaterialExclusion, AutoVisGroup)):
-             ttk.Label(self.properties_frame_inner, text=element.name, font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-             ttk.Label(self.properties_frame_inner, text=element.description).grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
-             ttk.Label(self.properties_frame_inner, text="(Editing not yet supported in GUI)").grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+        elif isinstance(element, AutoVisGroup):
+            ttk.Label(self.properties_frame_inner, text="Parent Name:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+            parent_entry = ttk.Entry(self.properties_frame_inner)
+            parent_entry.insert(0, element.parent_name)
+            parent_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+            parent_entry.bind("<FocusOut>", lambda e, el=element: self._update_autovisgroup_parent(el, e.widget.get()))
+
+            ttk.Label(self.properties_frame_inner, text="Children:", font="-weight bold").grid(row=1, column=0, padx=5, pady=5, sticky="nw")
+            desc_label = ttk.Label(self.properties_frame_inner, text="(One entity or subgroup name per line)")
+            desc_label.grid(row=2, column=0, columnspan=2, padx=5, pady=(0,5), sticky="w")
+            
+            child_text = tk.Text(self.properties_frame_inner, height=10, wrap="word",
+                                 bg=text_bg, fg=text_fg, insertbackground=text_insert_color,
+                                 relief="flat", borderwidth=1, highlightthickness=0)
+            
+            child_text_content = []
+            for child in element.children:
+                if isinstance(child, str):
+                    child_text_content.append(child)
+                elif isinstance(child, AutoVisGroup):
+                    child_text_content.append(f"[Sub-group: {child.parent_name}] (Not editable here)")
+            
+            child_text.insert("1.0", "\n".join(child_text_content))
+            child_text.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+            child_text.bind("<FocusOut>", lambda e, el=element: self._update_autovisgroup_children(el, e.widget.get("1.0", "end-1c")))
 
         elif isinstance(element, EntityClass):
             row = 0
@@ -370,6 +468,9 @@ class FGDApplication(tk.Tk):
             row = create_section("Outputs:", element.outputs, lambda f, el, i: self._create_io_ui(f, el, i, "output"), self._add_output_dialog, row)
 
         self.properties_frame_inner.grid_columnconfigure(1, weight=1)
+        if isinstance(element, (MaterialExclusion, AutoVisGroup)):
+             self.properties_frame_inner.grid_rowconfigure(2 if isinstance(element, MaterialExclusion) else 3, weight=1)
+
         self.properties_frame_inner.update_idletasks()
         self.properties_canvas.configure(scrollregion=self.properties_canvas.bbox("all"))
 
@@ -443,20 +544,20 @@ class FGDApplication(tk.Tk):
             self._display_element_details(self.selected_element)
 
     def _create_io_ui(self, parent, element, io_obj, io_type):
-        ttk.Entry(parent, width=15).insert(0, io_obj.name).pack(side="left", padx=2)
-        ttk.Entry(parent, width=10).insert(0, io_obj.arg_type).pack(side="left", padx=2)
-        ttk.Entry(parent).insert(0, io_obj.description).pack(side="left", fill="x", expand=True, padx=2)
+        entry_name = ttk.Entry(parent, width=15); entry_name.insert(0, io_obj.name); entry_name.pack(side="left", padx=2)
+        entry_name.bind("<FocusOut>", lambda e, o=io_obj: setattr(o, 'name', e.widget.get()))
+        entry_type = ttk.Entry(parent, width=10); entry_type.insert(0, io_obj.arg_type); entry_type.pack(side="left", padx=2)
+        entry_type.bind("<FocusOut>", lambda e, o=io_obj: setattr(o, 'arg_type', e.widget.get()))
+        entry_desc = ttk.Entry(parent); entry_desc.insert(0, io_obj.description); entry_desc.pack(side="left", fill="x", expand=True, padx=2)
+        entry_desc.bind("<FocusOut>", lambda e, o=io_obj: setattr(o, 'description', e.widget.get()))
         ttk.Button(parent, text="X", width=2, command=lambda: self._remove_io(io_obj)).pack(side="right", padx=2)
 
     def _create_property_ui(self, parent, element, prop):
         prop_frame = ttk.LabelFrame(parent, text=f"{prop.name} ({prop.prop_type})")
         prop_frame.pack(fill="x", expand=True, pady=2)
 
-        # --- MODIFIED: Get text widget colors from the theme using the safe helper ---
-        # Fallbacks are provided for themes that may return empty strings or lack options.
         text_fg = self._get_style_color("TEntry", "foreground", "black")
         text_bg = self._get_style_color("TEntry", "fieldbackground", "white")
-        # The insert color should default to the foreground color.
         text_insert_color = self._get_style_color("TEntry", "insertcolor", text_fg)
 
         top_frame = ttk.Frame(prop_frame)
@@ -480,7 +581,6 @@ class FGDApplication(tk.Tk):
 
         ttk.Button(top_frame, text="Remove", command=lambda: self._remove_property(prop)).pack(side="right")
 
-        # --- MODIFIED: Apply theme colors to this tk.Text widget ---
         desc_text = tk.Text(prop_frame, height=2, wrap="word", width=40,
                             bg=text_bg, fg=text_fg, insertbackground=text_insert_color,
                             relief="flat", borderwidth=1, highlightthickness=0)
@@ -541,35 +641,81 @@ class FGDApplication(tk.Tk):
             d_entry.bind("<FocusOut>", lambda e, fl=flag: setattr(fl, 'description', e.widget.get()))
 
             ttk.Button(f, text="X", width=2, command=lambda fl=flag: self._remove_flag(prop, fl)).pack(side="right", padx=2)
+    
+    # --- NEW: Update handlers for directive properties ---
+    def _update_include_path(self, element: IncludeDirective, new_path: str):
+        element.file_path = new_path
+        element.update_name()
+        self._update_elements_list()
+
+    def _update_mapsize(self, element: MapSize, part: str, widget: ttk.Entry):
+        try:
+            new_value = int(widget.get())
+            if part == 'min':
+                element.min_coord = new_value
+            else:
+                element.max_coord = new_value
+            element.update_description()
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Coordinate must be an integer.")
+            # Restore original value
+            original_value = element.min_coord if part == 'min' else element.max_coord
+            widget.delete(0, tk.END)
+            widget.insert(0, str(original_value))
+
+    def _update_version(self, element: Version, widget: ttk.Entry):
+        try:
+            new_value = int(widget.get())
+            element.version_number = new_value
+            element.update_description()
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Version must be an integer.")
+            widget.delete(0, tk.END)
+            widget.insert(0, str(element.version_number))
+
+    def _update_material_exclusion(self, element: MaterialExclusion, text_content: str):
+        element.excluded_paths = [line.strip() for line in text_content.split('\n') if line.strip()]
+        element.update_description()
+
+    def _update_autovisgroup_parent(self, element: AutoVisGroup, new_name: str):
+        if new_name:
+            element.parent_name = new_name
+            element.update_name()
+            self._update_elements_list()
+
+    def _update_autovisgroup_children(self, element: AutoVisGroup, text_content: str):
+        new_children = []
+        lines = [line.strip() for line in text_content.split('\n') if line.strip()]
+        
+        # This basic implementation only supports updating string children.
+        # It preserves existing sub-groups but doesn't allow creating/editing them via text.
+        existing_subgroups = [child for child in element.children if isinstance(child, AutoVisGroup)]
+        
+        for line in lines:
+            if line.startswith('[Sub-group:'):
+                continue # Skip placeholder text for subgroups
+            new_children.append(line)
+        
+        element.children = new_children + existing_subgroups
 
     def _update_element_name(self, element: EntityClass, new_name: str):
         if not new_name or element.name == new_name: return
         old_name = element.name
         if self.fgd_file.class_map.get(new_name):
             messagebox.showerror("Error", f"Class name '{new_name}' already exists.")
-            # Revert the entry text
-            self._display_element_details(element)
+            self._display_element_details(element) # Revert entry text
             return
 
-        del self.fgd_file.class_map[old_name]
-        if old_name in self.fgd_file.base_classes:
-            del self.fgd_file.base_classes[old_name]
-
+        self.fgd_file.rename_class(old_name, new_name)
         element.name = new_name
-        self.fgd_file.class_map[new_name] = element
-        if element.class_type == "BaseClass":
-            self.fgd_file.base_classes[new_name] = element
         self._update_elements_list()
-        # Reselect the item with its new name
-        self.elements_list.selection_set(new_name)
+        
+        new_id = self.fgd_file.get_id_by_element(element)
+        if new_id: self.elements_list.selection_set(new_id)
 
     def _update_class_type(self, element: EntityClass, new_type: str):
         if element.class_type == new_type: return
-        if element.class_type == "BaseClass" and element.name in self.fgd_file.base_classes:
-            del self.fgd_file.base_classes[element.name]
-        element.class_type = new_type
-        if new_type == "BaseClass":
-            self.fgd_file.base_classes[element.name] = element
+        self.fgd_file.change_class_type(element.name, new_type)
         self._update_elements_list()
 
     def _update_element_description(self, element: EntityClass, new_desc: str):

@@ -83,3 +83,6 @@ Chuma & Paril - Troubleshooting
 - Need to add logic to handle nested blocks like 'choices' or 'flags'. The parser is currently skipping them. This involves checking for `[` and `]` and calling the correct parsing method.
 
 - Maybe update code from tkinter to ttk?
+
+- Any ETA on when flags will work? I made a new fgd and I can confirm there's an issue when trying to save those. Messing around in it rn to see what works, saving a fgd without flags works great
+- seems the opposite error occurs when choices are put in there too, so it seems like it's trying to find both instead of one or the other...?

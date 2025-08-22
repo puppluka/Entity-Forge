@@ -2,7 +2,7 @@
 set MAJOR=0
 set MINOR=6
 set PATCH=0
-set BUILD=3
+set BUILD=4
 echo.
 echo ------------------------------------
 echo.

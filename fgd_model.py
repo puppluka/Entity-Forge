@@ -25,6 +25,10 @@ class IncludeDirective(FGDElement):
         self.file_path = file_path
         self.class_type = "Include"
 
+    def update_name(self):
+        """Updates the name based on the file path."""
+        self.name = f'@include "{self.file_path}"'
+
     def __repr__(self):
         return f"IncludeDirective(file_path='{self.file_path}')"
 
@@ -35,11 +39,19 @@ class MapSize(FGDElement):
         self.min_coord = min_coord
         self.max_coord = max_coord
 
+    def update_description(self):
+        """Updates the description based on coordinates."""
+        self.description = f"Defines map bounds from {self.min_coord} to {self.max_coord}"
+
 class Version(FGDElement):
     """Represents a @version directive."""
     def __init__(self, version_number: int):
         super().__init__(name="@version", description=f"Specifies FGD version {version_number}")
         self.version_number = version_number
+
+    def update_description(self):
+        """Updates the description based on the version number."""
+        self.description = f"Specifies FGD version {self.version_number}"
 
 class MaterialExclusion(FGDElement):
     """Represents a @MaterialExclusion block."""
@@ -47,12 +59,20 @@ class MaterialExclusion(FGDElement):
         super().__init__(name="@MaterialExclusion", description=f"Excludes {len(excluded_paths)} material paths")
         self.excluded_paths = excluded_paths
 
+    def update_description(self):
+        """Updates the description based on the path count."""
+        self.description = f"Excludes {len(self.excluded_paths)} material paths"
+
 class AutoVisGroup(FGDElement):
     """Represents an @AutoVisGroup block."""
     def __init__(self, parent_name: str, children: list):
         super().__init__(name=f"VisGroup: {parent_name}", description="Editor automatic visibility group")
         self.parent_name = parent_name
         self.children = children # Can contain strings (entity names) or other AutoVisGroup objects
+
+    def update_name(self):
+        """Updates the name based on the parent name."""
+        self.name = f"VisGroup: {self.parent_name}"
 
 # --- UPDATED: Property and Item Models ---
 
@@ -160,6 +180,7 @@ class FGDFile:
         self.elements = []
         self.class_map = {}
         self.base_classes = {}
+        self.element_id_map = {} # Maps Treeview IID to element object
 
     def add_element(self, element: FGDElement):
         """Adds an FGD element to the file and updates internal maps."""
@@ -168,6 +189,52 @@ class FGDFile:
             self.class_map[element.name] = element
             if element.class_type == "BaseClass":
                 self.base_classes[element.name] = element
+
+    def remove_element(self, element: FGDElement):
+        """Removes an element and updates internal maps."""
+        if element in self.elements:
+            self.elements.remove(element)
+        if isinstance(element, EntityClass):
+            if element.name in self.class_map:
+                del self.class_map[element.name]
+            if element.name in self.base_classes:
+                del self.base_classes[element.name]
+        
+        # Clean up the ID map
+        key_to_del = self.get_id_by_element(element)
+        if key_to_del and key_to_del in self.element_id_map:
+            del self.element_id_map[key_to_del]
+
+    def rename_class(self, old_name: str, new_name: str):
+        """Safely renames an entity class in the internal maps."""
+        if old_name in self.class_map:
+            element = self.class_map.pop(old_name)
+            self.class_map[new_name] = element
+        if old_name in self.base_classes:
+            element = self.base_classes.pop(old_name)
+            self.base_classes[new_name] = element
+            
+    def change_class_type(self, name: str, new_type: str):
+        """Updates an element's type and the base_classes map."""
+        element = self.class_map.get(name)
+        if not element: return
+
+        if element.class_type == "BaseClass" and name in self.base_classes:
+            del self.base_classes[name]
+        
+        element.class_type = new_type
+        
+        if new_type == "BaseClass":
+            self.base_classes[name] = element
+
+    def get_element_by_id(self, iid: str) -> FGDElement | None:
+        return self.element_id_map.get(iid)
+    
+    def get_id_by_element(self, element: FGDElement) -> str | None:
+        for iid, el in self.element_id_map.items():
+            if el is element:
+                return iid
+        return None
 
     def __repr__(self):
         return f"FGDFile(elements={len(self.elements)})"
