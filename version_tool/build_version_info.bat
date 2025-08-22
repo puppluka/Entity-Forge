@@ -2,8 +2,9 @@
 set MAJOR=0
 set MINOR=6
 set PATCH=0
-echo ------------------------------------
+set BUILD=3
 echo.
+echo ------------------------------------
 echo.
 
 IF EXIST "..\file_version_info.txt" ECHO Deleting original file...
@@ -17,8 +18,8 @@ echo. >> file_version_info.txt
 
 echo VSVersionInfo( >> file_version_info.txt
 echo   ffi=FixedFileInfo( >> file_version_info.txt
-echo     filevers=(%MAJOR%, %MINOR%, %PATCH%), >> file_version_info.txt
-echo     prodvers=(%MAJOR%, %MINOR%, %PATCH%), >> file_version_info.txt
+echo     filevers=(%MAJOR%, %MINOR%, %PATCH%, %BUILD%), >> file_version_info.txt
+echo     prodvers=(%MAJOR%, %MINOR%, %PATCH%, %BUILD%), >> file_version_info.txt
 echo. >> file_version_info.txt
 echo     mask=0x3f, >> file_version_info.txt
 echo. >> file_version_info.txt
@@ -41,12 +42,12 @@ echo       StringTable( >> file_version_info.txt
 echo         '040904B0', >> file_version_info.txt
 echo         [StringStruct('CompanyName', 'Aerox Software'), >> file_version_info.txt
 echo         StringStruct('FileDescription', 'Forge Game Data (FGD) Editing Utility'), >> file_version_info.txt
-echo         StringStruct('FileVersion', '%MAJOR%.%MINOR%.%PATCH%'), >> file_version_info.txt
+echo         StringStruct('FileVersion', '%MAJOR%.%MINOR%.%PATCH%.%BUILD%'), >> file_version_info.txt
 echo         StringStruct('InternalName', 'Entity-Forge'), >> file_version_info.txt
 echo         StringStruct('LegalCopyright', '© Copyright 2025 Aerox Software'), >> file_version_info.txt
 echo         StringStruct('OriginalFilename', 'EntityForge.exe'), >> file_version_info.txt
 echo         StringStruct('ProductName', 'Entity Forge'), >> file_version_info.txt
-echo         StringStruct('ProductVersion', '%MAJOR%.%MINOR%.%PATCH%')]) >> file_version_info.txt
+echo         StringStruct('ProductVersion', '%MAJOR%.%MINOR%.%PATCH%.%BUILD%')]) >> file_version_info.txt
 echo       ]), >> file_version_info.txt
 echo     VarFileInfo([VarStruct('Translation', [1033, 1200])]) >> file_version_info.txt
 echo   ] >> file_version_info.txt

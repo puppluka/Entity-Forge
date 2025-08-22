@@ -14,7 +14,7 @@ file_path = 'build_version_info.bat'
 
 def increment_version(version_part):
     """
-    Increments the specified version number (MAJOR, MINOR, or PATCH) in build.bat.
+    Increments the specified version number (MAJOR, MINOR, PATCH, or BUILD) in build_version_info.bat.
     """
     try:
         with open(file_path, 'r') as file:
@@ -27,42 +27,50 @@ def increment_version(version_part):
     major_match = re.search(r"set MAJOR=(\d+)", content)
     minor_match = re.search(r"set MINOR=(\d+)", content)
     patch_match = re.search(r"set PATCH=(\d+)", content)
+    build_match = re.search(r"set BUILD=(\d+)", content)
 
-    if not all([major_match, minor_match, patch_match]):
-        print("Error: Could not find all MAJOR, MINOR, and PATCH variables in the file.")
+    if not all([major_match, minor_match, patch_match, build_match]):
+        print("Error: Could not find all MAJOR, MINOR, PATCH, and BUILD variables in the file.")
         sys.exit(1)
 
     major = int(major_match.group(1))
     minor = int(minor_match.group(1))
     patch = int(patch_match.group(1))
+    build = int(build_match.group(1))
 
     if version_part == 'major':
         major += 1
         minor = 0
         patch = 0
+        build = 0
     elif version_part == 'minor':
         minor += 1
         patch = 0
+        build = 0
     elif version_part == 'patch':
         patch += 1
+        build = 0
+    elif version_part == 'build':
+        build += 1
     else:
-        print(f"Error: Invalid argument '{version_part}'. Use 'major', 'minor', or 'patch'.")
+        print(f"Error: Invalid argument '{version_part}'. Use 'major', 'minor', 'patch', or 'build'.")
         sys.exit(1)
 
     # Replace the old version numbers with the new ones
     new_content = re.sub(r"set MAJOR=\d+", f"set MAJOR={major}", content, count=1)
     new_content = re.sub(r"set MINOR=\d+", f"set MINOR={minor}", new_content, count=1)
     new_content = re.sub(r"set PATCH=\d+", f"set PATCH={patch}", new_content, count=1)
+    new_content = re.sub(r"set BUILD=\d+", f"set BUILD={build}", new_content, count=1)
 
     # Write the updated content back to the file
     with open(file_path, 'w') as file:
         file.write(new_content)
 
-    print(f"Version updated to: {major}.{minor}.{patch}")
+    print(f"Version updated to: {major}.{minor}.{patch}.{build}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python increment_version.py [major|minor|patch]")
+        print("Usage: python version_update.py [major|minor|patch|build]")
         sys.exit(1)
 
     version_part_to_increment = sys.argv[1].lower()
