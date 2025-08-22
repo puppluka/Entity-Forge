@@ -257,15 +257,28 @@ class FGDApplication(tk.Tk):
         canvas_bg = self.style.lookup("TFrame", "background")
         self.properties_canvas.config(bg=canvas_bg)
 
+    # --- NEW: Helper function to safely get theme colors ---
+    def _get_style_color(self, style_name, option, fallback):
+        """Safely looks up a style color, providing a fallback for errors or empty values."""
+        try:
+            color = self.style.lookup(style_name, option)
+            # Return fallback if the lookup returns an empty string, which is invalid for tk widgets.
+            return color if color else fallback
+        except tk.TclError:
+            # Return fallback if the style option doesn't exist (e.g., 'insertcolor' in some themes).
+            return fallback
+
     def _display_element_details(self, element: FGDElement | None):
         self._clear_properties_frame()
         self.selected_element = element
         if not element: return
 
-        # --- NEW: Get text widget colors from the current theme ---
-        text_bg = self.style.lookup("TEntry", "fieldbackground")
-        text_fg = self.style.lookup("TEntry", "foreground")
-        text_insert_color = self.style.lookup("TEntry", "insertcolor")
+        # --- MODIFIED: Get text widget colors from the theme using the safe helper ---
+        # Fallbacks are provided for themes that may return empty strings or lack options.
+        text_fg = self._get_style_color("TEntry", "foreground", "black")
+        text_bg = self._get_style_color("TEntry", "fieldbackground", "white")
+        # The insert color should default to the foreground color.
+        text_insert_color = self._get_style_color("TEntry", "insertcolor", text_fg)
 
         if isinstance(element, IncludeDirective):
             ttk.Label(self.properties_frame_inner, text="Include Path:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -439,10 +452,12 @@ class FGDApplication(tk.Tk):
         prop_frame = ttk.LabelFrame(parent, text=f"{prop.name} ({prop.prop_type})")
         prop_frame.pack(fill="x", expand=True, pady=2)
 
-        # --- NEW: Get text colors from theme here as well ---
-        text_bg = self.style.lookup("TEntry", "fieldbackground")
-        text_fg = self.style.lookup("TEntry", "foreground")
-        text_insert_color = self.style.lookup("TEntry", "insertcolor")
+        # --- MODIFIED: Get text widget colors from the theme using the safe helper ---
+        # Fallbacks are provided for themes that may return empty strings or lack options.
+        text_fg = self._get_style_color("TEntry", "foreground", "black")
+        text_bg = self._get_style_color("TEntry", "fieldbackground", "white")
+        # The insert color should default to the foreground color.
+        text_insert_color = self._get_style_color("TEntry", "insertcolor", text_fg)
 
         top_frame = ttk.Frame(prop_frame)
         top_frame.pack(fill="x", expand=True, padx=5, pady=5)

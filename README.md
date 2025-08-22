@@ -1,8 +1,28 @@
-# :: Entity Forge ::
+<img title="" src="assets/icon.png" alt="icon.png" data-align="center">
+
+<center>
+<h1/>:: Entity Forge ::
+</center>
 
 ##### A Modern FGD Editor
 
 Welcome to Entity Forge! This is a simple, modern desktop application designed to make creating and editing `.fgd` (Forge Game Data) files an intuitive and enjoyable experience. Whether you're a seasoned map maker or just starting out with Hammer, Entity Forge provides a clean, user-friendly interface to manage your entity definitions without the hassle of manual text editing.
+
+Head over to the **Releases** tab to catch the newest binary! (Windows only)
+
+---
+
+As of **Version 0.6**, a dark mode **AND** light mode are now available and working!
+
+---
+
+<img title="" src="assets/darkshot.png" alt="darkshot.png" width="632" data-align="center">
+
+<center>
+<h5/>Working screenshot of Editor Window with Help Panel.
+</center>
+
+---
 
 ## How It Works
 
@@ -15,6 +35,10 @@ Entity Forge is built with Python and utilizes a modular design to handle all as
 - **The Serializer (`fgd_serializer.py`):** After you've made your changes, the serializer takes the structured data from the model and writes it back to a clean, correctly formatted FGD file, ready for use in your game editor.
 
 - **The GUI (`fgd_gui.py`):** The front end of the application, built with `tkinter`, provides an interactive environment to view, create, and modify FGD elements. It's the part you'll see and interact with, handling everything from opening files to editing individual properties.
+  
+  
+
+---
 
 ## How to Use It
 
@@ -31,6 +55,8 @@ Entity Forge is built with Python and utilizes a modular design to handle all as
    ```
    python main.py
    ```
+
+---
 
 ### Basic Workflow
 
