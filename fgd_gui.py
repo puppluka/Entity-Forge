@@ -5,6 +5,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
 import re
 import traceback
+import copy
 
 # Import the core logic modules
 from fgd_parser import FGDParser
@@ -15,8 +16,50 @@ from fgd_model import (
 )
 from fgd_serializer import FGDSerializer
 from about import AboutWindow
-# --- NEW: Import the theme module ---
 import theme
+
+# --- NEW: A comprehensive list of known editor helpers for the dropdown menu ---
+# Compiled from the FGD Handbook PDF and the provided Quake 2 FGD file.
+EDITOR_HELPERS = sorted([
+    "axis", "beam", "catapult", "color", "cylinder", "decal", "direction",
+    "flags", "fogcontroller", "frustum", "halfgridsnap", "iconsprite",
+    "instance", "laser", "light", "lightcone", "lightprop", "line",
+    "model", "obb", "origin", "overlay", "overlay_transition",
+    "quadbounds", "ragdoll", "sequence", "sidelist", "size", "skin",
+    "skycamera", "sphere", "spotlight", "sprite", "studio", "studioprop",
+    "sun", "sweptplayerhull", "vecline", "wirebox", "worldtext", "worldtextvgui"
+])
+
+
+class InputDialog(simpledialog.Dialog):
+    """A generic dialog for creating items with multiple fields, including comboboxes."""
+    def __init__(self, parent, title, fields):
+        self.fields = fields
+        self.result = None
+        super().__init__(parent, title)
+
+    def body(self, master):
+        self.widgets = {}
+        for i, (key, label, type, initial, options) in enumerate(self.fields):
+            ttk.Label(master, text=f"{label}:").grid(row=i, column=0, sticky="w", padx=5, pady=3)
+            if type == 'combobox':
+                widget = ttk.Combobox(master, values=options, state="readonly")
+                if initial in options:
+                    widget.set(initial)
+                else:
+                    widget.set(options[0])
+                self.widgets[key] = widget
+            else:  # entry
+                widget = ttk.Entry(master)
+                widget.insert(0, initial)
+                self.widgets[key] = widget
+            widget.grid(row=i, column=1, sticky="ew", padx=5, pady=3)
+        master.grid_columnconfigure(1, weight=1)
+        return self.widgets[self.fields[0][0]]
+
+    def apply(self):
+        self.result = {key: widget.get() for key, widget in self.widgets.items()}
+
 
 class FGDApplication(tk.Tk):
     """Main Tkinter application class for the FGD Editor GUI."""
@@ -25,31 +68,30 @@ class FGDApplication(tk.Tk):
         self.title("Entity Forge - FGD Editor")
         self.geometry("1200x800")
 
-        # --- NEW: Initialize the style object early ---
         self.style = ttk.Style(self)
 
         self.fgd_file: FGDFile | None = None
         self.current_fgd_path: str | None = None
         self.selected_element: FGDElement | None = None
         self.properties_frame_inner_id = None
+        self.clipboard_element: FGDElement | None = None
 
         self.parser = FGDParser()
         self.serializer = FGDSerializer()
 
-        # --- NEW: Initialize the theme before creating widgets ---
         theme.setup_theme(self)
 
         self._create_widgets()
         self._setup_menu()
+        self._bind_hotkeys()
 
-        # --- NEW: Apply theme to menus after they are created ---
         theme.switch_theme(self, dark_mode=True)
 
     def _create_widgets(self):
         self.main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.main_pane.pack(fill="both", expand=True)
 
-        self.elements_frame = ttk.Frame(self.main_pane, width=300, relief=tk.RIDGE, borderwidth=2)
+        self.elements_frame = ttk.Frame(self.main_pane, width=350, relief=tk.RIDGE, borderwidth=2)
         self.main_pane.add(self.elements_frame, weight=1)
 
         ttk.Label(self.elements_frame, text="FGD Elements:").pack(padx=5, pady=5, anchor="w")
@@ -73,7 +115,6 @@ class FGDApplication(tk.Tk):
         button_frame = ttk.Frame(self.elements_frame)
         button_frame.pack(fill="x", padx=5, pady=5)
 
-        # --- MODIFIED: Changed "New Class" button to a Menubutton for all element types ---
         new_menubutton = ttk.Menubutton(button_frame, text="New...")
         new_menu = tk.Menu(new_menubutton, tearoff=0)
         new_menubutton["menu"] = new_menu
@@ -86,10 +127,20 @@ class FGDApplication(tk.Tk):
         new_menu.add_command(label="Material Exclusion", command=lambda: self._add_directive("materialexclusion"))
         new_menu.add_command(label="AutoVisGroup", command=lambda: self._add_directive("autovisgroup"))
         
-        new_menubutton.pack(side="left", fill="x", expand=True, padx=(0, 2))
+        new_menubutton.pack(side="left", fill="x", expand=True, padx=(0, 1))
 
-        delete_button = ttk.Button(button_frame, text="Delete Selected", command=self._delete_selected_element)
-        delete_button.pack(side="right", fill="x", expand=True, padx=(2, 0))
+        duplicate_button = ttk.Button(button_frame, text="Duplicate", command=self._duplicate_selected_element)
+        duplicate_button.pack(side="left", fill="x", expand=True, padx=1)
+
+        delete_button = ttk.Button(button_frame, text="Delete", command=self._delete_selected_element)
+        delete_button.pack(side="left", fill="x", expand=True, padx=(1, 0))
+        
+        reorder_frame = ttk.Frame(self.elements_frame)
+        reorder_frame.pack(fill="x", padx=5, pady=(0,5))
+        move_up_button = ttk.Button(reorder_frame, text="Move Up \u25B2", command=lambda: self._move_element("up"))
+        move_up_button.pack(side="left", fill="x", expand=True, padx=(0, 2))
+        move_down_button = ttk.Button(reorder_frame, text="Move Down \u25BC", command=lambda: self._move_element("down"))
+        move_down_button.pack(side="right", fill="x", expand=True, padx=(2, 0))
 
         self.properties_frame = ttk.Frame(self.main_pane, relief=tk.RIDGE, borderwidth=2)
         self.main_pane.add(self.properties_frame, weight=3)
@@ -112,17 +163,24 @@ class FGDApplication(tk.Tk):
     def _setup_menu(self):
         self.menubar = tk.Menu(self, tearoff=0)
         self.config(menu=self.menubar)
+        
         file_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New", command=self._new_fgd_file)
+        file_menu.add_command(label="New", command=self._new_fgd_file, accelerator="Ctrl+N")
         file_menu.add_separator()
-        file_menu.add_command(label="Open", command=self._open_fgd_file)
-        file_menu.add_command(label="Save", command=self._save_fgd_file)
-        file_menu.add_command(label="Save As...", command=self._save_fgd_file_as)
+        file_menu.add_command(label="Open...", command=self._open_fgd_file, accelerator="Ctrl+O")
+        file_menu.add_command(label="Save", command=self._save_fgd_file, accelerator="Ctrl+S")
+        file_menu.add_command(label="Save As...", command=self._save_fgd_file_as, accelerator="Ctrl+Shift+S")
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self.quit)
+        file_menu.add_command(label="Exit", command=self.quit, accelerator="Ctrl+Q")
 
-        # --- NEW: Theme menu and commands ---
+        edit_menu = tk.Menu(self.menubar, tearoff=0)
+        self.menubar.add_cascade(label="Edit", menu=edit_menu)
+        edit_menu.add_command(label="Cut", command=self._handle_cut, accelerator="Ctrl+X")
+        edit_menu.add_command(label="Copy", command=self._handle_copy, accelerator="Ctrl+C")
+        edit_menu.add_command(label="Paste", command=self._handle_paste, accelerator="Ctrl+V")
+        edit_menu.add_command(label="Duplicate", command=self._duplicate_selected_element, accelerator="Ctrl+D")
+
         theme_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Theme", menu=theme_menu)
         theme_menu.add_command(label="Dark", command=lambda: self._switch_theme(dark_mode=True))
@@ -132,13 +190,27 @@ class FGDApplication(tk.Tk):
         self.menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="About", command=self.show_about_window)
 
+    def _bind_hotkeys(self):
+        self.bind_all("<Control-n>", lambda e: self._new_fgd_file())
+        self.bind_all("<Control-o>", lambda e: self._open_fgd_file())
+        self.bind_all("<Control-s>", lambda e: self._save_fgd_file())
+        self.bind_all("<Control-Shift-S>", lambda e: self._save_fgd_file_as())
+        self.bind_all("<Control-q>", lambda e: self.quit())
+        self.bind_all("<Control-d>", lambda e: self._duplicate_selected_element())
+        
+        self.bind_all("<Control-x>", self._handle_cut)
+        self.bind_all("<Control-c>", self._handle_copy)
+        self.bind_all("<Control-v>", self._handle_paste)
+
     def _new_fgd_file(self):
+        if self.fgd_file and messagebox.askyesno("Unsaved Changes", "You have an open file. Do you want to save it before creating a new one?"):
+            self._save_fgd_file()
+        
         self.fgd_file = FGDFile()
         self.current_fgd_path = None
-        self.title("FGD Editor - New File*")
+        self.title("Entity Forge - New File")
         self._update_elements_list()
         self._clear_properties_frame()
-        messagebox.showinfo("New File", "Created a new, empty FGD file.")
 
     def _add_entity_class(self):
         if not self.fgd_file:
@@ -147,14 +219,13 @@ class FGDApplication(tk.Tk):
 
         name = simpledialog.askstring("New Class", "Enter the new class name:")
         if not name: return
-        if name in self.fgd_file.class_map:
-            messagebox.showerror("Error", f"A class named '{name}' already exists.")
+        
+        clean_name = re.sub(r'\s+', '_', name)
+        if clean_name in self.fgd_file.class_map:
+            messagebox.showerror("Error", f"A class named '{clean_name}' already exists.")
             return
 
-        class_type = simpledialog.askstring("New Class", "Enter class type:", initialvalue="PointClass")
-        if not class_type: return
-
-        new_element = EntityClass(class_type=class_type, name=name, description="A new entity class.")
+        new_element = EntityClass(class_type="PointClass", name=clean_name, description="A new entity class.")
         self.fgd_file.add_element(new_element)
         self._update_elements_list()
         self._select_element_in_tree(new_element.name)
@@ -193,7 +264,6 @@ class FGDApplication(tk.Tk):
     def _delete_selected_element(self):
         selected_ids = self.elements_list.selection()
         if not selected_ids:
-            messagebox.showwarning("No Selection", "Please select an element to delete.")
             return
         
         selected_id = selected_ids[0]
@@ -216,16 +286,15 @@ class FGDApplication(tk.Tk):
                 self.parser = FGDParser()
                 self.fgd_file = self.parser.parse_fgd_file(filepath)
                 self.current_fgd_path = filepath
-                self.title(f"FGD Editor - {os.path.basename(filepath)}")
+                self.title(f"Entity Forge - {os.path.basename(filepath)}")
                 self._update_elements_list()
                 self._clear_properties_frame()
-                messagebox.showinfo("Load Successful", f"'{os.path.basename(filepath)}' loaded.")
             except Exception as e:
-                traceback.print_exc() # Print full traceback to terminal
+                traceback.print_exc()
                 messagebox.showerror("Load Error", f"Failed to load FGD file: {e}")
                 self.fgd_file = None
                 self.current_fgd_path = None
-                self.title("FGD Editor")
+                self.title("Entity Forge")
                 self._update_elements_list()
                 self._clear_properties_frame()
 
@@ -248,7 +317,6 @@ class FGDApplication(tk.Tk):
             messagebox.showwarning("No Data", "No FGD data to save.")
             return
         try:
-            # Ensure any focused widget updates its bound variable before saving
             focused_widget = self.focus_get()
             if focused_widget:
                 focused_widget.event_generate("<FocusOut>")
@@ -258,15 +326,16 @@ class FGDApplication(tk.Tk):
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(serialized_content)
             self.current_fgd_path = filepath
-            self.title(f"FGD Editor - {os.path.basename(filepath)}")
+            self.title(f"Entity Forge - {os.path.basename(filepath)}")
             messagebox.showinfo("Save Successful", f"File saved to {os.path.basename(filepath)}")
         except Exception as e:
             traceback.print_exc()
             messagebox.showerror("Save Error", f"Failed to save file: {e}")
 
     def _update_elements_list(self):
-        # Store selection to restore it later
         selection = self.elements_list.selection()
+        
+        self.fgd_file.element_id_map.clear()
         
         for iid in self.elements_list.get_children():
             self.elements_list.delete(iid)
@@ -281,15 +350,14 @@ class FGDApplication(tk.Tk):
                     print(f"Error adding element to Treeview: {e}. Element: {element.name}, Type: {element.class_type}")
                     messagebox.showerror("GUI Error", f"Failed to display an FGD element. Check terminal for details.")
 
-        # Restore selection
         if selection:
             try:
                 self.elements_list.selection_set(selection)
+                self.elements_list.see(selection[0])
             except tk.TclError:
-                pass # Item may have been deleted
+                pass 
 
     def _select_element_in_tree(self, element_name: str):
-        """Finds and selects an element in the Treeview by its display name."""
         for iid in self.elements_list.get_children():
             if self.elements_list.item(iid, "text") == element_name:
                 self.elements_list.selection_set(iid)
@@ -308,19 +376,14 @@ class FGDApplication(tk.Tk):
     def _clear_properties_frame(self):
         for widget in self.properties_frame_inner.winfo_children():
             widget.destroy()
-        # --- NEW: Ensure canvas is correctly colored after clearing ---
         canvas_bg = self.style.lookup("TFrame", "background")
         self.properties_canvas.config(bg=canvas_bg)
 
-    # --- NEW: Helper function to safely get theme colors ---
     def _get_style_color(self, style_name, option, fallback):
-        """Safely looks up a style color, providing a fallback for errors or empty values."""
         try:
             color = self.style.lookup(style_name, option)
-            # Return fallback if the lookup returns an empty string, which is invalid for tk widgets.
             return color if color else fallback
         except tk.TclError:
-            # Return fallback if the style option doesn't exist (e.g., 'insertcolor' in some themes).
             return fallback
 
     def _display_element_details(self, element: FGDElement | None):
@@ -332,7 +395,6 @@ class FGDApplication(tk.Tk):
         text_bg = self._get_style_color("TEntry", "fieldbackground", "white")
         text_insert_color = self._get_style_color("TEntry", "insertcolor", text_fg)
 
-        # --- MODIFIED: Added editable interfaces for all directive types ---
         if isinstance(element, IncludeDirective):
             ttk.Label(self.properties_frame_inner, text="Include Path:", font="-weight bold").grid(row=0, column=0, padx=5, pady=5, sticky="w")
             path_entry = ttk.Entry(self.properties_frame_inner)
@@ -415,7 +477,6 @@ class FGDApplication(tk.Tk):
             type_combo.bind("<<ComboboxSelected>>", lambda e: self._update_class_type(element, type_combo.get()))
             row += 1
 
-            # --- MODIFIED: Apply theme colors to tk.Text widgets ---
             ttk.Label(self.properties_frame_inner, text="Description:").grid(row=row, column=0, padx=5, pady=2, sticky="nw")
             desc_text = tk.Text(self.properties_frame_inner, height=3, wrap="word",
                                 bg=text_bg, fg=text_fg, insertbackground=text_insert_color,
@@ -436,16 +497,8 @@ class FGDApplication(tk.Tk):
 
             helpers_frame = ttk.LabelFrame(self.properties_frame_inner, text="Editor Helpers")
             helpers_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=5, pady=5); row += 1
+            self._create_helpers_ui(helpers_frame, element)
 
-            helper_row = 0
-            for key, val in element.helpers.items():
-                ttk.Label(helpers_frame, text=f"{key}:").grid(row=helper_row, column=0, padx=5, pady=2, sticky="w")
-                entry = ttk.Entry(helpers_frame)
-                entry.insert(0, val)
-                entry.grid(row=helper_row, column=1, padx=5, pady=2, sticky="ew")
-                entry.bind("<FocusOut>", lambda e, k=key: element.helpers.update({k: e.widget.get()}))
-                helper_row += 1
-            helpers_frame.grid_columnconfigure(1, weight=1)
 
             def create_section(title, items, ui_creator, add_cmd, r):
                 ttk.Separator(self.properties_frame_inner).grid(row=r, column=0, columnspan=2, sticky="ew", pady=(10,2)); r+=1
@@ -482,13 +535,17 @@ class FGDApplication(tk.Tk):
 
     def _add_io_dialog(self, io_type):
         if not isinstance(self.selected_element, EntityClass): return
-        name = simpledialog.askstring(f"Add {io_type.capitalize()}", f"Enter {io_type.capitalize()} Name:")
-        if name:
-            arg_type = simpledialog.askstring("Argument Type", "Enter Argument Type (e.g., void, string):", initialvalue="void")
-            if arg_type is not None:
-                new_io = IO(io_type, name, arg_type, "")
-                self.selected_element.add_io(new_io)
-                self._display_element_details(self.selected_element)
+
+        io_arg_types = ['void', 'string', 'integer', 'float', 'bool', 'ehandle', 'color255', 'vector']
+        fields = [
+            ('name', 'Name', 'entry', f'OnNew{io_type.capitalize()}', None),
+            ('arg_type', 'Argument Type', 'combobox', 'void', io_arg_types)
+        ]
+        dialog = InputDialog(self, f"Add {io_type.capitalize()}", fields)
+        if dialog.result:
+            new_io = IO(io_type, dialog.result['name'], dialog.result['arg_type'], "")
+            self.selected_element.add_io(new_io)
+            self._display_element_details(self.selected_element)
 
     def _remove_io(self, io_obj: IO):
         if not isinstance(self.selected_element, EntityClass): return
@@ -498,17 +555,25 @@ class FGDApplication(tk.Tk):
 
     def _add_property_dialog(self):
         if not isinstance(self.selected_element, EntityClass): return
-        name = simpledialog.askstring("Add Property", "Enter Property Name (e.g., targetname):")
-        if name:
-            prop_type = simpledialog.askstring("Add Property", "Enter Property Type (e.g., string, integer, choices, flags):", initialvalue="string")
-            if prop_type:
-                base_type = prop_type.split(',')[0].strip().lower()
-                new_prop = None
-                if base_type == 'choices': new_prop = ChoicesProperty(name, prop_type)
-                elif base_type == 'flags': new_prop = FlagsProperty(name, prop_type)
-                else: new_prop = KeyvalueProperty(name, prop_type)
-                self.selected_element.properties.append(new_prop)
-                self._display_element_details(self.selected_element)
+        
+        prop_types = [
+            'string', 'integer', 'float', 'choices', 'flags', 'bool', 'angle', 'color255', 
+            'decal', 'material', 'sound', 'sprite', 'studio', 'target_destination', 'target_source', 'vector'
+        ]
+        fields = [
+            ('name', 'Name', 'entry', 'new_property', None),
+            ('type', 'Property Type', 'combobox', 'string', prop_types)
+        ]
+        dialog = InputDialog(self, "Add Property", fields)
+        if dialog.result:
+            name, prop_type = dialog.result['name'], dialog.result['type']
+            base_type = prop_type.split(',')[0].strip().lower()
+            new_prop = None
+            if base_type == 'choices': new_prop = ChoicesProperty(name, prop_type)
+            elif base_type == 'flags': new_prop = FlagsProperty(name, prop_type)
+            else: new_prop = KeyvalueProperty(name, prop_type)
+            self.selected_element.properties.append(new_prop)
+            self._display_element_details(self.selected_element)
 
     def _remove_property(self, prop: Property):
         if not isinstance(self.selected_element, EntityClass): return
@@ -518,7 +583,7 @@ class FGDApplication(tk.Tk):
 
     def _add_choice(self, prop: ChoicesProperty):
         value = simpledialog.askstring("Add Choice", "Enter Choice Value:")
-        if value:
+        if value is not None:
             display = simpledialog.askstring("Add Choice", "Enter Display Name:", initialvalue=value.replace("_", " ").title())
             if display is not None:
                 prop.choices.append(ChoiceItem(value, display, ""))
@@ -642,7 +707,43 @@ class FGDApplication(tk.Tk):
 
             ttk.Button(f, text="X", width=2, command=lambda fl=flag: self._remove_flag(prop, fl)).pack(side="right", padx=2)
     
-    # --- NEW: Update handlers for directive properties ---
+    def _create_helpers_ui(self, parent, element):
+        for widget in parent.winfo_children():
+            widget.destroy()
+
+        for i, (key, val) in enumerate(element.helpers.items()):
+            ttk.Label(parent, text=f"{key}:").grid(row=i, column=0, padx=5, pady=2, sticky="w")
+            entry = ttk.Entry(parent)
+            entry.insert(0, val)
+            entry.grid(row=i, column=1, padx=5, pady=2, sticky="ew")
+            entry.bind("<FocusOut>", lambda e, k=key: element.helpers.update({k: e.widget.get()}))
+            
+            remove_btn = ttk.Button(parent, text="X", width=2, command=lambda k=key: self._remove_helper(element, k))
+            remove_btn.grid(row=i, column=2, padx=5, pady=2)
+        
+        add_btn = ttk.Button(parent, text="Add Helper", command=lambda: self._add_helper_dialog(element))
+        add_btn.grid(row=len(element.helpers), column=0, columnspan=3, pady=5, sticky="ew", padx=5)
+        
+        parent.grid_columnconfigure(1, weight=1)
+
+    # --- MODIFIED: Use InputDialog with combobox for helper names ---
+    def _add_helper_dialog(self, element: EntityClass):
+        fields = [
+            ('name', 'Helper Name', 'combobox', 'color', EDITOR_HELPERS),
+            ('args', 'Arguments', 'entry', '', None)
+        ]
+        dialog = InputDialog(self, "Add Editor Helper", fields)
+        if dialog.result:
+            name, args = dialog.result['name'], dialog.result['args']
+            if name:
+                element.helpers[name.lower()] = args
+                self._display_element_details(element)
+
+    def _remove_helper(self, element: EntityClass, key: str):
+        if key in element.helpers:
+            del element.helpers[key]
+            self._display_element_details(element)
+
     def _update_include_path(self, element: IncludeDirective, new_path: str):
         element.file_path = new_path
         element.update_name()
@@ -658,7 +759,6 @@ class FGDApplication(tk.Tk):
             element.update_description()
         except ValueError:
             messagebox.showerror("Invalid Input", "Coordinate must be an integer.")
-            # Restore original value
             original_value = element.min_coord if part == 'min' else element.max_coord
             widget.delete(0, tk.END)
             widget.insert(0, str(original_value))
@@ -687,13 +787,10 @@ class FGDApplication(tk.Tk):
         new_children = []
         lines = [line.strip() for line in text_content.split('\n') if line.strip()]
         
-        # This basic implementation only supports updating string children.
-        # It preserves existing sub-groups but doesn't allow creating/editing them via text.
         existing_subgroups = [child for child in element.children if isinstance(child, AutoVisGroup)]
         
         for line in lines:
-            if line.startswith('[Sub-group:'):
-                continue # Skip placeholder text for subgroups
+            if line.startswith('[Sub-group:'): continue 
             new_children.append(line)
         
         element.children = new_children + existing_subgroups
@@ -703,7 +800,7 @@ class FGDApplication(tk.Tk):
         old_name = element.name
         if self.fgd_file.class_map.get(new_name):
             messagebox.showerror("Error", f"Class name '{new_name}' already exists.")
-            self._display_element_details(element) # Revert entry text
+            self._display_element_details(element) 
             return
 
         self.fgd_file.rename_class(old_name, new_name)
@@ -724,9 +821,123 @@ class FGDApplication(tk.Tk):
     def _update_base_classes(self, element: EntityClass, new_bases_str: str):
         element.base_classes = [b.strip() for b in new_bases_str.split(',') if b.strip()]
 
-    # --- NEW: Function to handle theme switching and UI refresh ---
     def _switch_theme(self, dark_mode: bool):
-        """Applies the selected theme and refreshes the properties view."""
         theme.switch_theme(self, dark_mode)
-        # Re-display details to ensure all widgets get the new theme colors
         self._display_element_details(self.selected_element)
+    
+    def _move_element(self, direction: str):
+        if not self.fgd_file or not self.elements_list.selection(): return
+        
+        selected_id = self.elements_list.selection()[0]
+        element = self.fgd_file.get_element_by_id(selected_id)
+        if not element: return
+
+        try:
+            current_index = self.fgd_file.elements.index(element)
+            if direction == "up" and current_index > 0:
+                self.fgd_file.elements.insert(current_index - 1, self.fgd_file.elements.pop(current_index))
+            elif direction == "down" and current_index < len(self.fgd_file.elements) - 1:
+                self.fgd_file.elements.insert(current_index + 1, self.fgd_file.elements.pop(current_index))
+            else:
+                return 
+            
+            self._update_elements_list()
+            new_id = self.fgd_file.get_id_by_element(element)
+            if new_id:
+                self.elements_list.selection_set(new_id)
+                self.elements_list.focus(new_id)
+                self.elements_list.see(new_id)
+
+        except ValueError:
+            messagebox.showerror("Error", "Could not find the selected element to move it.")
+
+    def _duplicate_selected_element(self, event=None):
+        if not self.fgd_file or not self.elements_list.selection(): return
+        
+        selected_id = self.elements_list.selection()[0]
+        original_element = self.fgd_file.get_element_by_id(selected_id)
+        if not original_element: return
+        
+        new_element = original_element.duplicate()
+
+        if isinstance(new_element, EntityClass):
+            new_name = simpledialog.askstring("Duplicate Class", "Enter name for the new class:", initialvalue=f"{new_element.name}_copy")
+            if not new_name: return
+            if new_name in self.fgd_file.class_map:
+                messagebox.showerror("Error", f"A class named '{new_name}' already exists.")
+                return
+            new_element.name = new_name
+        
+        original_index = self.fgd_file.elements.index(original_element)
+        self.fgd_file.elements.insert(original_index + 1, new_element)
+        self.fgd_file.add_element(new_element) 
+        self.fgd_file.elements.pop() 
+
+        self._update_elements_list()
+        self._select_element_in_tree(new_element.name)
+
+    def _handle_cut(self, event=None):
+        widget = self.focus_get()
+        if isinstance(widget, ttk.Treeview):
+            self._copy_element()
+            self._delete_selected_element()
+        else:
+            try: widget.event_generate("<<Cut>>")
+            except tk.TclError: pass
+        return "break"
+
+    def _handle_copy(self, event=None):
+        widget = self.focus_get()
+        if isinstance(widget, ttk.Treeview):
+            self._copy_element()
+        else:
+            try: widget.event_generate("<<Copy>>")
+            except tk.TclError: pass
+        return "break"
+
+    def _handle_paste(self, event=None):
+        widget = self.focus_get()
+        if isinstance(widget, ttk.Treeview):
+            self._paste_element()
+        else:
+            try: widget.event_generate("<<Paste>>")
+            except tk.TclError: pass
+        return "break"
+
+    def _copy_element(self):
+        if not self.elements_list.selection(): return
+        selected_id = self.elements_list.selection()[0]
+        element = self.fgd_file.get_element_by_id(selected_id)
+        if element:
+            self.clipboard_element = element.duplicate()
+
+    def _paste_element(self):
+        if not self.clipboard_element: return
+        
+        new_element = self.clipboard_element.duplicate()
+
+        if isinstance(new_element, EntityClass):
+            original_name = new_element.name
+            counter = 1
+            while new_element.name in self.fgd_file.class_map:
+                new_element.name = f"{original_name}_paste{counter}"
+                counter += 1
+
+        insert_index = len(self.fgd_file.elements)
+        if self.elements_list.selection():
+            selected_id = self.elements_list.selection()[0]
+            selected_element = self.fgd_file.get_element_by_id(selected_id)
+            if selected_element:
+                try:
+                    insert_index = self.fgd_file.elements.index(selected_element) + 1
+                except ValueError:
+                    pass # Element not in list, append to end
+        
+        self.fgd_file.elements.insert(insert_index, new_element)
+        if isinstance(new_element, EntityClass):
+            self.fgd_file.class_map[new_element.name] = new_element
+            if new_element.class_type == "BaseClass":
+                self.fgd_file.base_classes[new_element.name] = new_element
+
+        self._update_elements_list()
+        self._select_element_in_tree(new_element.name)

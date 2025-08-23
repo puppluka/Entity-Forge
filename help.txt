@@ -74,15 +74,14 @@ Chuma & Paril - Troubleshooting
 
 	<-- TODO -->
 
-- The GUI does not yet allow you to create or edit display directives like @mapsize, @version, etc. at this time. They can be viewed/parsed effectively.
-
-- The "New" button in the element list needs to be updated to allow for the creation of these new directive types, in addition to entity classes.
-
 - Dedicated editing interfaces need to be created in the right-hand panel to allow the values of these directives (e.g., the version number for @version or the coordinates for @mapsize) to be modified.
 
-- Need to add logic to handle nested blocks like 'choices' or 'flags'. The parser is currently skipping them. This involves checking for `[` and `]` and calling the correct parsing method.
+- "Editor helpers" should be another additional field like keyvalues and ins/outs. It's a bit odd to see the fields in there and being able to edit them but not add/remove anything
 
-- Maybe update code from tkinter to ttk?
+- In the FGD Elements list, it'd be REALLY great if the editor could move them around. It's possible to just shuffle it around by copying and pasting this stuff in one's editor of choice, but assuming it's not super hard to implement it'd be pretty great if it could be moved around
 
-- Any ETA on when flags will work? I made a new fgd and I can confirm there's an issue when trying to save those. Messing around in it rn to see what works, saving a fgd without flags works great
-- seems the opposite error occurs when choices are put in there too, so it seems like it's trying to find both instead of one or the other...?
+- Duplicate option for FGD elements, in case I need to add an entity that's maybe exactly the same as another one, but with extra options. I refer specifically to cases like func_door vs func_door_rotating in Q2 where it's basically most of the same criteria, but with some extra flags included dictating the axis on which it rotates
+
+- Maybe a drop box for class types when making elements, or element types when making keyvalues; that way the user doesn't have to just type it manually every time.
+
+- Hotkeys. Can't tell you how many times I've tried to ctrl/command/meta-s when making an edit but I realize "wait, I need to actually go to the menu and click save"

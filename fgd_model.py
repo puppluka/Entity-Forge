@@ -1,6 +1,7 @@
 # fgd_model.py
 
 import re
+import copy
 
 # --- NEW: Top-Level Directive Models ---
 
@@ -14,6 +15,10 @@ class FGDElement:
         self.name = name
         self.description = description
         self.class_type = self.__class__.__name__
+
+    def duplicate(self):
+        """Creates a deep copy of this element."""
+        return copy.deepcopy(self)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(name='{self.name}', description='{self.description[:30]}...')'"
