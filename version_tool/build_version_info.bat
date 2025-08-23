@@ -1,8 +1,8 @@
 @echo off
 set MAJOR=0
 set MINOR=6
-set PATCH=0
-set BUILD=4
+set PATCH=1
+set BUILD=0
 echo.
 echo ------------------------------------
 echo.
