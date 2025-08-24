@@ -16,7 +16,7 @@ As of **Version 0.6**, a dark mode **AND** light mode are now available and work
 
 ---
 
-<img title="" src="assets/darkshot.png" alt="darkshot.png" width="632" data-align="center">
+<img title="" src="assets/screenshot.png" alt="screenshot.png" width="632" data-align="center">
 
 <center>
 <h5/>Working screenshot of Editor Window with Help Panel.

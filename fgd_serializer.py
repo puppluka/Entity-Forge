@@ -127,17 +127,39 @@ class FGDSerializer:
         if prop.readonly: prop_header += " readonly"
         if prop.report: prop_header += " report"
 
+        # --- FIX ---
+        # Logic to conditionally quote the default value based on property type.
+        # Numeric/vector types should not be quoted. String types should be.
+        # 'choices' is a special case that can have numeric or string defaults.
+        non_quoted_types = {'integer', 'float', 'bool', 'angle', 'color255', 'vector', 'flags'}
+        base_prop_type = prop.prop_type.split(',')[0].strip().lower()
+        
+        quote_default = True # Default to quoting
+        if base_prop_type in non_quoted_types:
+            quote_default = False
+        # For 'choices', only quote if the value is not a plain number.
+        elif base_prop_type == 'choices':
+            if prop.default_value and re.match(r'^-?\d+(\.\d+)?$', prop.default_value):
+                quote_default = False
+
         # Header: ... : "DisplayName" : "DefaultValue" : "Description"
         details = []
         # FGD format requires all preceding colons.
         if prop.description:
             display_str = f'"{prop.display_name}"'
-            default_val_str = f'"{prop.default_value}"' if isinstance(prop.default_value, str) else str(prop.default_value)
+            
+            val_to_use = prop.default_value
+            # For non-quoted types, if the value is empty, use "0" as a safe default
+            # because an empty value is not valid for a number if a description is present.
+            if not quote_default and not val_to_use:
+                val_to_use = "0"
+            
+            default_val_str = f'"{val_to_use}"' if quote_default else str(val_to_use)
             desc_str = f'"{prop.description.replace("\"", "\\\"")}"'
             details = [display_str, default_val_str, desc_str]
         elif prop.default_value:
             display_str = f'"{prop.display_name}"'
-            default_val_str = f'"{prop.default_value}"' if isinstance(prop.default_value, str) else str(prop.default_value)
+            default_val_str = f'"{prop.default_value}"' if quote_default else str(prop.default_value)
             details = [display_str, default_val_str]
         elif prop.display_name:
             display_str = f'"{prop.display_name}"'
@@ -146,11 +168,8 @@ class FGDSerializer:
         if details:
             prop_header += " : " + " : ".join(details)
         
-        # --- FIX ---
-        # The original line caused an AttributeError because it tried to access `prop.choices` on a FlagsProperty object
-        # (which doesn't have that attribute) and vice-versa.
-        # This new logic correctly checks the instance type first, then checks if the corresponding list (`.choices` or `.flags`)
-        # is populated. The `or` condition ensures that if the first part is true, the second part isn't evaluated, preventing the error.
+        # --- (End of fix section) ---
+        
         is_block_prop = (isinstance(prop, fgd_model.ChoicesProperty) and prop.choices) or \
                         (isinstance(prop, fgd_model.FlagsProperty) and prop.flags)
         
